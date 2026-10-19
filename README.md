@@ -1,10 +1,19 @@
 # Guitart
 
-Estudio de guitarra en el navegador: afinador, pedalera de efectos, monitor de escucha y grabación en WAV. PWA instalable, sin backend, publicada en GitHub Pages.
+Estudio de guitarra en el navegador: afinador, simulador de amplificador, pedalera de efectos, monitor de escucha y grabación en WAV. PWA instalable, sin backend, publicada en GitHub Pages.
 
 **Demo:** https://juhabararj.github.io/guitart/
 
-## Fase 2 (esta versión)
+## Fase 3 (esta versión)
+
+- Simulador de amplificador con 3 modelos (limpio, crunch y hi-gain): dos etapas de previo de válvula con sobremuestreo 4x, tonos, etapa de potencia y presencia
+- Pantalla por convolución: 1x12, 2x12 y 4x12 generadas por código, con micrófono al centro o al borde
+- Carga de IR propias en WAV, guardadas en el navegador
+- Compresor reescrito en AudioWorklet: ya no añade los ~6 ms de latencia de DynamicsCompressorNode
+- Protección de salida que redondea los picos en lugar de recortarlos
+- Los presets de versiones anteriores reciben el amplificador y la pantalla en su posición natural
+
+## Fase 2
 
 - Pedalera de 7 efectos: puerta de ruido, compresor, saturación (overdrive, distorsión, fuzz), ecualizador de 3 bandas, chorus estéreo, delay y reverb
 - Orden de la cadena configurable arrastrando los pedales (ratón, táctil o teclado)
@@ -48,10 +57,12 @@ Desactiva la escucha de Guitart si ya oyes la guitarra por los auriculares de la
 ```
 public/worklets/capture-processor.js  Captura PCM en el hilo de audio
 public/worklets/gate-processor.js     Puerta de ruido
+public/worklets/comp-processor.js     Compresor sin latencia añadida
 src/audio/engine.ts                    Grafo de audio (entrada, canal, ganancia, pedalera, monitor, captura)
 src/audio/effects.ts                   Definición y procesado de cada pedal
 src/audio/chain.ts                     Cadena de efectos y estado de la pedalera
 src/presets.ts                         Presets de fábrica, guardado e importación
+src/storage/irs.ts                     IR propias en IndexedDB
 src/audio/pitch.ts                     Detección de tono YIN y notas
 src/audio/wav.ts                       Codificador WAV 24 bits
 src/storage/recordings.ts              Grabaciones en IndexedDB
@@ -62,6 +73,6 @@ src/components/                        Afinador, medidor y grabadora
 
 1. ~~MVP: entrada, monitor, afinador, grabación~~
 2. ~~Cadena de efectos reordenable y presets~~
-3. Simulador de amplificador (AudioWorklet + WASM) y cargador de IR
+3. ~~Simulador de amplificador y cargador de IR~~
 4. Looper, metrónomo, caja de ritmos y multipista
 5. MIDI, pedal Bluetooth y presets compartibles

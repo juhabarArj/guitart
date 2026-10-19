@@ -17,14 +17,25 @@ export interface Level {
 
 const toDb = (x: number) => (x > 0 ? 20 * Math.log10(x) : -Infinity);
 
+function protectCurve(): Float32Array<ArrayBuffer> {
+  const n = 4096;
+  const curve = new Float32Array(new ArrayBuffer(n * 4));
+  for (let i = 0; i < n; i++) {
+    const u = ((i / (n - 1)) * 2 - 1) * 2; // dominio ±2 (la entrada se divide entre 2)
+    const a = Math.abs(u);
+    curve[i] = a < 0.8 ? u : Math.sign(u) * (0.8 + 0.2 * Math.tanh((a - 0.8) / 0.2));
+  }
+  return curve;
+}
+
 /**
  * Grafo de audio:
  *
  *  entrada ─► splitter ─► (canal elegido) ─► ganancia ─┬─► medidor
  *                                                    ├─► afinador
  *                                                    ├─► (captura en seco)
- *                                                    └─► pedalera ─┬─► monitor ─► salida
- *                                                                  └─► (captura con efectos)
+ *                                                    └─► pedalera ─► protección ─┬─► monitor ─► salida
+ *                                                                               └─► (captura con efectos)
  *
  * La captura (worklet) se conecta a la señal seca o a la de la pedalera según la opción elegida.
  */
@@ -39,6 +50,7 @@ export class AudioEngine {
   private tuner!: AnalyserNode;
   private capture!: AudioWorkletNode;
   chain: EffectChain | null = null;
+  private protect!: WaveShaperNode;
   private recordSource: RecordSource = 'wet';
   private meterBuf = new Float32Array(2048);
   private tunerBuf = new Float32Array(4096);
@@ -52,7 +64,8 @@ export class AudioEngine {
     const base = import.meta.env.BASE_URL;
     await Promise.all([
       ctx.audioWorklet.addModule(`${base}worklets/capture-processor.js`),
-      ctx.audioWorklet.addModule(`${base}worklets/gate-processor.js`)
+      ctx.audioWorklet.addModule(`${base}worklets/gate-processor.js`),
+      ctx.audioWorklet.addModule(`${base}worklets/comp-processor.js`)
     ]);
 
     this.inputGain = new GainNode(ctx, { gain: 1 });
@@ -70,7 +83,10 @@ export class AudioEngine {
     this.inputGain.connect(this.tuner);
     const chain = new EffectChain(ctx);
     this.inputGain.connect(chain.input);
-    chain.output.connect(this.monitorGain).connect(ctx.destination);
+    // Protección de salida: transparente hasta -2 dBFS, redondea los picos en vez de recortarlos en seco
+    const protectIn = new GainNode(ctx, { gain: 0.5 });
+    this.protect = new WaveShaperNode(ctx, { curve: protectCurve() });
+    chain.output.connect(protectIn).connect(this.protect).connect(this.monitorGain).connect(ctx.destination);
     this.chain = chain;
     // El worklet necesita estar conectado al destino para que el navegador lo procese
     this.capture.connect(silent).connect(ctx.destination);
@@ -90,7 +106,7 @@ export class AudioEngine {
   setRecordSource(source: RecordSource) {
     this.recordSource = source;
     if (!this.chain) return;
-    for (const node of [this.inputGain, this.chain.output]) {
+    for (const node of [this.inputGain, this.protect]) {
       try {
         node.disconnect(this.capture);
       } catch {
@@ -100,7 +116,7 @@ export class AudioEngine {
     if (source === 'wet') {
       this.capture.channelCount = 2;
       this.capture.channelCountMode = 'explicit';
-      this.chain.output.connect(this.capture);
+      this.protect.connect(this.capture);
     } else {
       this.capture.channelCountMode = 'max';
       this.inputGain.connect(this.capture);

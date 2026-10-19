@@ -649,6 +649,8 @@ input[type='range'] {
 [data-pedal='gate'] { --pedal: #8a9ba5; }
 [data-pedal='comp'] { --pedal: #4fb0a8; }
 [data-pedal='drive'] { --pedal: #e39b2d; }
+[data-pedal='amp'] { --pedal: #d0605e; }
+[data-pedal='cab'] { --pedal: #b49a6c; }
 [data-pedal='eq'] { --pedal: #c9bfa4; }
 [data-pedal='chorus'] { --pedal: #6f95e0; }
 [data-pedal='delay'] { --pedal: #a184dc; }
@@ -666,6 +668,22 @@ input[type='range'] {
 
 .pedal.on {
   border-top-color: var(--pedal);
+}
+
+.cab-ir {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.cab-ir-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.hint.warn {
+  color: var(--amber);
 }
 
 .pedal.dragging {

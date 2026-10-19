@@ -28,7 +28,7 @@ export function formatValue(d: ParamDef, v: number): string {
     case '%':
       return `${Math.round(v)} %`;
     default:
-      return String(v);
+      return v.toFixed(d.step < 1 ? 1 : 0);
   }
 }
 

@@ -1,6 +1,6 @@
 // Definiciones y procesado de cada pedal con nodos nativos de Web Audio.
 
-export type EffectType = 'gate' | 'comp' | 'drive' | 'eq' | 'chorus' | 'delay' | 'reverb';
+export type EffectType = 'gate' | 'comp' | 'drive' | 'amp' | 'cab' | 'eq' | 'chorus' | 'delay' | 'reverb';
 
 export interface ParamDef {
   key: string;
@@ -63,6 +63,66 @@ export const EFFECT_DEFS: EffectDef[] = [
       { key: 'drive', label: 'Ganancia', min: 0, max: 100, step: 1, default: 40, unit: '%' },
       { key: 'tone', label: 'Tono', min: 0, max: 100, step: 1, default: 55, unit: '%' },
       { key: 'level', label: 'Volumen', min: -36, max: 6, step: 0.5, default: -14, unit: 'dB' }
+    ]
+  },
+  {
+    type: 'amp',
+    name: 'Amplificador',
+    parallel: false,
+    params: [
+      {
+        key: 'model',
+        label: 'Modelo',
+        min: 0,
+        max: 2,
+        step: 1,
+        default: 1,
+        choices: [
+          { value: 0, label: 'Limpio' },
+          { value: 1, label: 'Crunch' },
+          { value: 2, label: 'Hi-gain' }
+        ]
+      },
+      { key: 'gain', label: 'Ganancia', min: 0, max: 100, step: 1, default: 50, unit: '%' },
+      { key: 'bass', label: 'Graves', min: 0, max: 10, step: 0.1, default: 5 },
+      { key: 'mid', label: 'Medios', min: 0, max: 10, step: 0.1, default: 5 },
+      { key: 'treble', label: 'Agudos', min: 0, max: 10, step: 0.1, default: 5 },
+      { key: 'presence', label: 'Presencia', min: 0, max: 10, step: 0.1, default: 5 },
+      { key: 'master', label: 'Volumen', min: 0, max: 10, step: 0.1, default: 5 }
+    ]
+  },
+  {
+    type: 'cab',
+    name: 'Pantalla',
+    parallel: false,
+    params: [
+      {
+        key: 'model',
+        label: 'Altavoz',
+        min: 0,
+        max: 3,
+        step: 1,
+        default: 2,
+        choices: [
+          { value: 0, label: '1x12' },
+          { value: 1, label: '2x12' },
+          { value: 2, label: '4x12' },
+          { value: 3, label: 'Propia' }
+        ]
+      },
+      {
+        key: 'mic',
+        label: 'Micrófono',
+        min: 0,
+        max: 1,
+        step: 1,
+        default: 0,
+        choices: [
+          { value: 0, label: 'Centro' },
+          { value: 1, label: 'Borde' }
+        ]
+      },
+      { key: 'level', label: 'Volumen', min: -12, max: 12, step: 0.5, default: 0, unit: 'dB' }
     ]
   },
   {
@@ -181,19 +241,18 @@ class Gate extends Effect {
 }
 
 class Compressor extends Effect {
-  private comp: DynamicsCompressorNode;
+  private comp: AudioWorkletNode;
   private makeup: GainNode;
   constructor(ctx: AudioContext) {
     super(ctx, DEF_BY_TYPE.comp);
-    this.comp = new DynamicsCompressorNode(ctx, { knee: 6, attack: 0.005, release: 0.15 });
+    this.comp = new AudioWorkletNode(ctx, 'comp-processor');
     this.makeup = new GainNode(ctx);
     this.comp.connect(this.makeup);
     this.attachCore(this.comp, this.makeup);
   }
   setParam(key: string, v: number) {
-    if (key === 'threshold') this.ramp(this.comp.threshold, v);
-    else if (key === 'ratio') this.ramp(this.comp.ratio, v);
-    else if (key === 'makeup') this.ramp(this.makeup.gain, dbToGain(v));
+    if (key === 'makeup') this.ramp(this.makeup.gain, dbToGain(v));
+    else this.comp.parameters.get(key)?.setValueAtTime(v, this.ctx.currentTime);
   }
 }
 
@@ -239,6 +298,284 @@ class Drive extends Effect {
     else if (key === 'drive') this.ramp(this.pre.gain, dbToGain(6 + pct(v) * 40));
     else if (key === 'tone') this.ramp(this.tone.frequency, toneToHz(v, 900, 9000));
     else if (key === 'level') this.ramp(this.level.gain, dbToGain(v));
+  }
+}
+
+
+/* ───────── Amplificador ─────────
+ * Modelo de etapas con nodos nativos (procesados en C++ por el navegador, sin latencia añadida):
+ * entrada ─► HPF ─► previo 1 (válvula, 4x) ─► acoplo ─► previo 2 (válvula, 4x) ─► tonos ─► etapa de potencia ─► presencia ─► volumen
+ */
+
+interface AmpModel {
+  inHpf: number;
+  pre: [number, number]; // dB de previo 1 con ganancia 0 % y 100 %
+  k1: number;
+  bias1: number;
+  couple: number; // filtro paso alto entre etapas: más alto = graves más "apretados"
+  lpf: number;
+  stage2: [number, number];
+  k2: number;
+  bassF: number;
+  midF: number;
+  midQ: number;
+  trebleF: number;
+  makeup: number;
+}
+
+const AMP_MODELS: AmpModel[] = [
+  { inHpf: 40, pre: [0, 22], k1: 0.7, bias1: 0.1, couple: 30, lpf: 9500, stage2: [-6, 0], k2: 0.5, bassF: 120, midF: 500, midQ: 0.6, trebleF: 2800, makeup: 8 },
+  { inHpf: 70, pre: [6, 34], k1: 1.1, bias1: 0.25, couple: 140, lpf: 7500, stage2: [0, 12], k2: 1, bassF: 110, midF: 700, midQ: 0.7, trebleF: 2400, makeup: 2 },
+  { inHpf: 90, pre: [14, 42], k1: 1.5, bias1: 0.3, couple: 320, lpf: 6500, stage2: [8, 24], k2: 1.4, bassF: 100, midF: 650, midQ: 0.8, trebleF: 2200, makeup: 0 }
+];
+
+/** Curva de válvula asimétrica. Dominio ampliado ×4 para que las señales altas no lleguen al borde de la curva. */
+function tubeCurve(k: number, bias: number): Float32Array<ArrayBuffer> {
+  const n = 8192;
+  const curve = new Float32Array(new ArrayBuffer(n * 4));
+  const f = (u: number) => Math.tanh(k * u + bias) - Math.tanh(bias);
+  const norm = Math.max(Math.abs(f(4)), Math.abs(f(-4)));
+  for (let i = 0; i < n; i++) curve[i] = f(((i / (n - 1)) * 2 - 1) * 4) / norm;
+  return curve;
+}
+
+const lerp = (r: [number, number], t: number) => r[0] + (r[1] - r[0]) * t;
+const knobDb = (v: number, range: number) => ((v - 5) / 5) * range;
+
+class Amp extends Effect {
+  private inHpf: BiquadFilterNode;
+  private pre1: GainNode;
+  private shaper1: WaveShaperNode;
+  private couple: BiquadFilterNode;
+  private lpf: BiquadFilterNode;
+  private pre2: GainNode;
+  private shaper2: WaveShaperNode;
+  private bass: BiquadFilterNode;
+  private mid: BiquadFilterNode;
+  private treble: BiquadFilterNode;
+  private power: WaveShaperNode;
+  private presence: BiquadFilterNode;
+  private master: GainNode;
+  private p: Record<string, number> = { model: 1, gain: 50, master: 5 };
+
+  constructor(ctx: AudioContext) {
+    super(ctx, DEF_BY_TYPE.amp);
+    this.inHpf = new BiquadFilterNode(ctx, { type: 'highpass', Q: 0.7 });
+    this.pre1 = new GainNode(ctx);
+    this.shaper1 = new WaveShaperNode(ctx, { oversample: '4x' });
+    this.couple = new BiquadFilterNode(ctx, { type: 'highpass', Q: 0.5 });
+    this.lpf = new BiquadFilterNode(ctx, { type: 'lowpass', Q: 0.5 });
+    this.pre2 = new GainNode(ctx);
+    this.shaper2 = new WaveShaperNode(ctx, { oversample: '4x' });
+    this.bass = new BiquadFilterNode(ctx, { type: 'lowshelf' });
+    this.mid = new BiquadFilterNode(ctx, { type: 'peaking' });
+    this.treble = new BiquadFilterNode(ctx, { type: 'highshelf' });
+    const powerIn = new GainNode(ctx, { gain: 0.5 });
+    this.power = new WaveShaperNode(ctx, { curve: tubeCurve(1.2, 0), oversample: '2x' });
+    this.presence = new BiquadFilterNode(ctx, { type: 'highshelf', frequency: 4000 });
+    this.master = new GainNode(ctx);
+
+    this.inHpf
+      .connect(this.pre1)
+      .connect(this.shaper1)
+      .connect(this.couple)
+      .connect(this.lpf)
+      .connect(this.pre2)
+      .connect(this.shaper2)
+      .connect(this.bass)
+      .connect(this.mid)
+      .connect(this.treble)
+      .connect(powerIn)
+      .connect(this.power)
+      .connect(this.presence)
+      .connect(this.master);
+    this.attachCore(this.inHpf, this.master);
+    this.setModel(1);
+  }
+
+  private get model() {
+    return AMP_MODELS[Math.round(this.p.model)] ?? AMP_MODELS[1];
+  }
+
+  private setModel(index: number) {
+    this.p.model = index;
+    const m = this.model;
+    this.shaper1.curve = tubeCurve(m.k1, m.bias1);
+    this.shaper2.curve = tubeCurve(m.k2, -0.15);
+    this.ramp(this.inHpf.frequency, m.inHpf);
+    this.ramp(this.couple.frequency, m.couple);
+    this.ramp(this.lpf.frequency, m.lpf);
+    this.ramp(this.bass.frequency, m.bassF);
+    this.ramp(this.mid.frequency, m.midF);
+    this.ramp(this.mid.Q, m.midQ);
+    this.ramp(this.treble.frequency, m.trebleF);
+    this.updateGain();
+    this.updateMaster();
+  }
+
+  private updateGain() {
+    const t = pct(this.p.gain ?? 50);
+    // ÷4: compensa el dominio ampliado de las curvas
+    this.ramp(this.pre1.gain, dbToGain(lerp(this.model.pre, t)) / 4);
+    this.ramp(this.pre2.gain, dbToGain(lerp(this.model.stage2, t)) / 4);
+  }
+
+  private updateMaster() {
+    this.ramp(this.master.gain, dbToGain(-24 + (this.p.master ?? 5) * 3 + this.model.makeup));
+  }
+
+  setParam(key: string, v: number) {
+    if (key === 'model') return this.setModel(Math.round(v));
+    this.p[key] = v;
+    if (key === 'gain') this.updateGain();
+    else if (key === 'master') this.updateMaster();
+    else if (key === 'bass') this.ramp(this.bass.gain, knobDb(v, 12));
+    else if (key === 'mid') this.ramp(this.mid.gain, knobDb(v, 10));
+    else if (key === 'treble') this.ramp(this.treble.gain, knobDb(v, 12));
+    else if (key === 'presence') this.ramp(this.presence.gain, knobDb(v, 8));
+  }
+}
+
+/* ───────── Pantalla (simulación de altavoz por convolución) ───────── */
+
+type FilterSpec = BiquadFilterOptions & { type: BiquadFilterType };
+
+const CABS: FilterSpec[][] = [
+  // 1x12 abierta: graves sueltos, más aire
+  [
+    { type: 'highpass', frequency: 70, Q: 0.7 },
+    { type: 'peaking', frequency: 120, Q: 1, gain: 3 },
+    { type: 'peaking', frequency: 2500, Q: 1, gain: 3 },
+    { type: 'lowpass', frequency: 6000, Q: 1.2 },
+    { type: 'lowpass', frequency: 7000, Q: 0.7 }
+  ],
+  // 2x12
+  [
+    { type: 'highpass', frequency: 80, Q: 0.9 },
+    { type: 'peaking', frequency: 110, Q: 1.2, gain: 4 },
+    { type: 'peaking', frequency: 1800, Q: 1, gain: 2 },
+    { type: 'peaking', frequency: 4000, Q: 2, gain: -4 },
+    { type: 'lowpass', frequency: 5000, Q: 1.4 },
+    { type: 'lowpass', frequency: 5500, Q: 0.7 }
+  ],
+  // 4x12 cerrada: resonancia grave marcada, agudos recortados
+  [
+    { type: 'highpass', frequency: 85, Q: 1.3 },
+    { type: 'peaking', frequency: 100, Q: 1.4, gain: 5 },
+    { type: 'peaking', frequency: 400, Q: 1, gain: -2 },
+    { type: 'peaking', frequency: 2000, Q: 1.2, gain: 3 },
+    { type: 'lowpass', frequency: 4200, Q: 1.6 },
+    { type: 'lowpass', frequency: 4800, Q: 0.7 }
+  ]
+];
+
+const MICS: FilterSpec[] = [
+  { type: 'highshelf', frequency: 3000, gain: 2 },
+  { type: 'highshelf', frequency: 2200, gain: -6 }
+];
+
+const cabCache = new Map<string, Promise<AudioBuffer>>();
+
+/**
+ * Normaliza la IR a energía unidad y la baja 10 dB: con señal de guitarra el nivel queda parecido
+ * con la pantalla activada o desactivada, y todas las IR (de fábrica o propias) suenan a volumen similar.
+ */
+function normalizeIr(ctx: BaseAudioContext, ir: AudioBuffer): AudioBuffer {
+  let energy = 0;
+  for (let c = 0; c < ir.numberOfChannels; c++) for (const s of ir.getChannelData(c)) energy += s * s;
+  energy /= ir.numberOfChannels;
+  if (energy <= 0) return ir;
+  const k = dbToGain(-10) / Math.sqrt(energy);
+  const out = ctx.createBuffer(ir.numberOfChannels, ir.length, ir.sampleRate);
+  for (let c = 0; c < ir.numberOfChannels; c++) {
+    const src = ir.getChannelData(c);
+    const dst = new Float32Array(src.length);
+    for (let i = 0; i < src.length; i++) dst[i] = src[i] * k;
+    out.copyToChannel(dst, c);
+  }
+  return out;
+}
+
+/** Genera la respuesta al impulso de un altavoz pasando un impulso por sus filtros (sin archivos externos). */
+function cabImpulse(sampleRate: number, model: number, mic: number): Promise<AudioBuffer> {
+  const key = `${sampleRate}:${model}:${mic}`;
+  let p = cabCache.get(key);
+  if (!p) {
+    const len = Math.round(sampleRate * 0.08);
+    const off = new OfflineAudioContext(1, len, sampleRate);
+    const impulse = off.createBuffer(1, len, sampleRate);
+    impulse.getChannelData(0)[0] = 1;
+    const src = new AudioBufferSourceNode(off, { buffer: impulse });
+    let node: AudioNode = src;
+    for (const spec of [...CABS[model], MICS[mic]]) node = node.connect(new BiquadFilterNode(off, spec));
+    node.connect(off.destination);
+    src.start();
+    p = off.startRendering().then((ir) => normalizeIr(off, ir));
+    cabCache.set(key, p);
+  }
+  return p;
+}
+
+export type IrLoader = (id: string) => Promise<AudioBuffer | null>;
+
+export class Cab extends Effect {
+  private conv: ConvolverNode;
+  private level: GainNode;
+  private model = 2;
+  private mic = 0;
+  private irId: string | undefined;
+  private userIr: AudioBuffer | null = null;
+  private token = 0;
+  irLoader: IrLoader | null = null;
+  /** true cuando se ha elegido "IR propia" pero no hay archivo disponible y suena la 4x12 */
+  onFallback: ((fallback: boolean) => void) | null = null;
+
+  constructor(ctx: AudioContext) {
+    super(ctx, DEF_BY_TYPE.cab);
+    this.conv = new ConvolverNode(ctx, { disableNormalization: true });
+    this.level = new GainNode(ctx);
+    this.conv.connect(this.level);
+    this.attachCore(this.conv, this.level);
+    this.refresh();
+  }
+
+  setIr(id: string | undefined) {
+    this.irId = id;
+    this.userIr = null;
+    if (id && this.irLoader) {
+      this.irLoader(id)
+        .then((buf) => {
+          if (this.irId !== id) return;
+          this.userIr = buf ? normalizeIr(this.ctx, buf) : null;
+          this.refresh();
+        })
+        .catch(() => this.refresh());
+    }
+    this.refresh();
+  }
+
+  private refresh() {
+    const token = ++this.token;
+    if (this.model === 3 && this.userIr) {
+      this.conv.buffer = this.userIr;
+      this.onFallback?.(false);
+      return;
+    }
+    const model = this.model === 3 ? 2 : this.model;
+    this.onFallback?.(this.model === 3);
+    cabImpulse(this.ctx.sampleRate, model, this.mic).then((buf) => {
+      if (token === this.token) this.conv.buffer = buf;
+    });
+  }
+
+  setParam(key: string, v: number) {
+    if (key === 'model') {
+      this.model = Math.round(v);
+      this.refresh();
+    } else if (key === 'mic') {
+      this.mic = Math.round(v);
+      this.refresh();
+    } else if (key === 'level') this.ramp(this.level.gain, dbToGain(v));
   }
 }
 
@@ -364,6 +701,10 @@ export function createEffect(ctx: AudioContext, type: EffectType): Effect {
       return new Compressor(ctx);
     case 'drive':
       return new Drive(ctx);
+    case 'amp':
+      return new Amp(ctx);
+    case 'cab':
+      return new Cab(ctx);
     case 'eq':
       return new Equalizer(ctx);
     case 'chorus':

@@ -19,7 +19,7 @@ function board(order: EffectType[], pedals: Partial<Record<EffectType, Partial<P
   return order.map((t) => byType[t]);
 }
 
-const STD: EffectType[] = ['gate', 'comp', 'drive', 'eq', 'chorus', 'delay', 'reverb'];
+const STD: EffectType[] = ['gate', 'comp', 'drive', 'amp', 'cab', 'eq', 'chorus', 'delay', 'reverb'];
 
 export const FACTORY_PRESETS: Preset[] = [
   {
@@ -29,7 +29,8 @@ export const FACTORY_PRESETS: Preset[] = [
     board: board(STD, {
       gate: { threshold: -65 },
       comp: { threshold: -28, ratio: 3, makeup: 5 },
-      eq: { low: 1, mid: 0, high: 2 },
+      amp: { model: 0, gain: 35, bass: 5.5, mid: 4.5, treble: 6, presence: 5, master: 6 },
+      cab: { model: 1, mic: 0 },
       reverb: { decay: 1.8, tone: 60, mix: 22 }
     })
   },
@@ -39,8 +40,8 @@ export const FACTORY_PRESETS: Preset[] = [
     factory: true,
     board: board(STD, {
       gate: { threshold: -58 },
-      drive: { mode: 0, drive: 45, tone: 55, level: -14 },
-      eq: { low: 0, mid: 2, high: 1 },
+      amp: { model: 1, gain: 55, bass: 5, mid: 6, treble: 6, presence: 5.5, master: 5 },
+      cab: { model: 2, mic: 0 },
       reverb: { decay: 1.4, tone: 50, mix: 15 }
     })
   },
@@ -49,12 +50,24 @@ export const FACTORY_PRESETS: Preset[] = [
     name: 'Solo',
     factory: true,
     board: board(STD, {
-      gate: { threshold: -52 },
+      gate: { threshold: -50 },
       comp: { threshold: -30, ratio: 4, makeup: 6 },
-      drive: { mode: 1, drive: 72, tone: 50, level: -18 },
-      eq: { low: -1, mid: 3, high: 0 },
+      drive: { mode: 0, drive: 20, tone: 55, level: 0 },
+      amp: { model: 2, gain: 55, bass: 5, mid: 6.5, treble: 5.5, presence: 6, master: 5 },
+      cab: { model: 2, mic: 0 },
       delay: { time: 380, feedback: 30, tone: 45, mix: 25 },
       reverb: { decay: 2.2, tone: 50, mix: 18 }
+    })
+  },
+  {
+    id: 'factory:high',
+    name: 'Alta ganancia',
+    factory: true,
+    board: board(STD, {
+      gate: { threshold: -45, release: 80 },
+      drive: { mode: 0, drive: 10, tone: 60, level: 0 },
+      amp: { model: 2, gain: 80, bass: 6, mid: 3.5, treble: 6, presence: 6.5, master: 4.5 },
+      cab: { model: 2, mic: 1 }
     })
   },
   {
@@ -64,6 +77,8 @@ export const FACTORY_PRESETS: Preset[] = [
     board: board(STD, {
       gate: { threshold: -66 },
       comp: { threshold: -26, ratio: 3, makeup: 5 },
+      amp: { model: 0, gain: 30, bass: 5, mid: 5, treble: 6.5, presence: 5, master: 6 },
+      cab: { model: 0, mic: 1 },
       chorus: { rate: 0.6, depth: 55, mix: 45 },
       delay: { time: 520, feedback: 45, tone: 40, mix: 35 },
       reverb: { decay: 4.5, tone: 55, mix: 40 }
@@ -83,6 +98,7 @@ export const deletePreset = (id: string) => run('presets', 'readwrite', (s) => s
 
 /** Formato de archivo: { app: 'guitart', version: 1, presets: [{ name, board }] } */
 export function exportPresets(presets: Preset[]): Blob {
+  // Las IR propias no viajan en el archivo: en otro dispositivo la pantalla usará la 4x12 hasta cargar la IR
   const data = { app: 'guitart', version: 1, presets: presets.map((p) => ({ name: p.name, board: p.board })) };
   return new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
 }

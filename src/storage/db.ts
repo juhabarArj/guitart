@@ -1,7 +1,7 @@
 // Base de datos local del navegador (IndexedDB).
 const DB_NAME = 'guitart';
-const VERSION = 2;
-export type StoreName = 'recordings' | 'presets';
+const VERSION = 3;
+export type StoreName = 'recordings' | 'presets' | 'irs';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -12,6 +12,7 @@ function openDb(): Promise<IDBDatabase> {
       const db = req.result;
       if (!db.objectStoreNames.contains('recordings')) db.createObjectStore('recordings', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('presets')) db.createObjectStore('presets', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('irs')) db.createObjectStore('irs', { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => {

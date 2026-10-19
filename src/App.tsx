@@ -17,6 +17,7 @@ import {
   type Preset
 } from './presets';
 import { useSettings } from './settings';
+import { decodeIr, deleteIr, getIr, listIrs, MAX_IR_BYTES, saveIr, type StoredIr } from './storage/irs';
 
 const BOARD_KEY = 'guitart:board';
 const PRESET_KEY = 'guitart:preset';
@@ -76,10 +77,60 @@ export default function App() {
   const [board, setBoard] = useState<BoardState>(loadBoard);
   const [presetId, setPresetId] = useState<string>(() => localStorage.getItem(PRESET_KEY) ?? FACTORY_PRESETS[0].id);
   const [userPresets, setUserPresets] = useState<Preset[]>([]);
+  const [irs, setIrs] = useState<StoredIr[]>([]);
+  const irCache = useRef(new Map<string, AudioBuffer>());
 
   useEffect(() => {
     listUserPresets().then(setUserPresets).catch(() => undefined);
+    listIrs().then(setIrs).catch(() => undefined);
   }, []);
+
+  const loadIr = useCallback(
+    async (id: string) => {
+      const cached = irCache.current.get(id);
+      if (cached) return cached;
+      const rec = await getIr(id);
+      if (!rec || !engine.ctx) return null;
+      const buf = await decodeIr(engine.ctx, rec.blob);
+      irCache.current.set(id, buf);
+      return buf;
+    },
+    [engine]
+  );
+
+  const uploadIr = async (file: File) => {
+    if (file.size > MAX_IR_BYTES) {
+      setError('El archivo pesa más de 5 MB. Las IR de altavoz suelen ocupar menos de 200 KB.');
+      return;
+    }
+    try {
+      if (!engine.ctx) throw new Error('audio');
+      await decodeIr(engine.ctx, file); // comprueba que es audio válido antes de guardarlo
+      const ir: StoredIr = {
+        id: crypto.randomUUID(),
+        name: file.name.replace(/\.[^.]+$/, '').slice(0, 60) || 'IR',
+        createdAt: Date.now(),
+        blob: file
+      };
+      await saveIr(ir);
+      setIrs(await listIrs());
+      setBoard((b) =>
+        b.map((p) => (p.type === 'cab' ? { ...p, enabled: true, ir: ir.id, params: { ...p.params, model: 3 } } : p))
+      );
+      setError(null);
+    } catch {
+      setError('No se ha podido leer el archivo. Usa un WAV con la respuesta al impulso (IR) de un altavoz.');
+    }
+  };
+
+  const removeIr = async (id: string) => {
+    const ir = irs.find((i) => i.id === id);
+    if (!window.confirm(`¿Borrar la IR «${ir?.name ?? ''}» de este navegador?`)) return;
+    await deleteIr(id);
+    irCache.current.delete(id);
+    setIrs(await listIrs());
+    setBoard((b) => b.map((p) => (p.type === 'cab' && p.ir === id ? { ...p, ir: undefined } : p)));
+  };
 
   useEffect(() => {
     try {
@@ -145,6 +196,7 @@ export default function App() {
       engine.setChannelMode(settings.channelMode);
       engine.setInputGainDb(settings.gainDb);
       engine.setRecordSource(settings.recordSource);
+      engine.chain?.setIrLoader(loadIr);
       await refreshDevices();
       if (settings.outputId) await engine.setOutputDevice(settings.outputId).catch(() => update({ outputId: '' }));
       setPhase('running');
@@ -204,7 +256,7 @@ export default function App() {
     return (
       <main className="intro">
         <h1 className="wordmark">Guitart</h1>
-        <p className="lede">Afinador, pedalera de efectos y grabación para tu guitarra, directamente en el navegador.</p>
+        <p className="lede">Afinador, amplificador, pedalera de efectos y grabación para tu guitarra, directamente en el navegador.</p>
         <button className="btn primary big" onClick={start} disabled={phase === 'starting'}>
           {phase === 'starting' ? 'Abriendo audio…' : 'Activar audio'}
         </button>
@@ -392,12 +444,7 @@ export default function App() {
             />
           </div>
           <p className="hint flow">La señal entra por el pedal 1 y sale por el último. Arrastra un pedal por su número para cambiar el orden.</p>
-          <Pedalboard
-            board={board}
-            onChange={(b) => {
-              setBoard(b);
-            }}
-          />
+          <Pedalboard board={board} onChange={setBoard} ir={{ irs, onUploadIr: uploadIr, onDeleteIr: removeIr }} />
         </section>
 
         <Recorder

@@ -1,9 +1,11 @@
-import { createEffect, DEF_BY_TYPE, EFFECT_DEFS, type Effect, type EffectType } from './effects';
+import { Cab, createEffect, DEF_BY_TYPE, EFFECT_DEFS, type Effect, type EffectType, type IrLoader } from './effects';
 
 export interface PedalState {
   type: EffectType;
   enabled: boolean;
   params: Record<string, number>;
+  /** Solo en la pantalla: id de la IR propia elegida */
+  ir?: string;
 }
 
 /** Orden de la pedalera de izquierda a derecha, con el estado de cada pedal. */
@@ -33,9 +35,24 @@ export function normalizeBoard(input: unknown): BoardState {
       const v = Number((item as PedalState).params?.[p.key]);
       if (Number.isFinite(v)) params[p.key] = Math.max(p.min, Math.min(p.max, v));
     }
-    out.push({ type, enabled: Boolean((item as PedalState).enabled), params });
+    const pedal: PedalState = { type, enabled: Boolean((item as PedalState).enabled), params };
+    const ir = (item as PedalState).ir;
+    if (type === 'cab' && typeof ir === 'string' && ir) pedal.ir = ir;
+    out.push(pedal);
   }
-  for (const type of DEFAULT_ORDER) if (!seen.has(type)) out.push(defaultPedal(type));
+  // Pedales que faltan (p. ej. presets de versiones anteriores): se insertan en su posición natural
+  DEFAULT_ORDER.forEach((type, i) => {
+    if (seen.has(type)) return;
+    let pos = 0;
+    for (let j = i - 1; j >= 0; j--) {
+      const k = out.findIndex((p) => p.type === DEFAULT_ORDER[j]);
+      if (k >= 0) {
+        pos = k + 1;
+        break;
+      }
+    }
+    out.splice(pos, 0, defaultPedal(type));
+  });
   return out;
 }
 
@@ -67,6 +84,24 @@ export class EffectChain {
     this.order = order;
   }
 
+  private get cab() {
+    return this.effects.get('cab') as Cab;
+  }
+
+  setIrLoader(loader: IrLoader) {
+    this.cab.irLoader = loader;
+  }
+
+  onCabFallback(fn: (fallback: boolean) => void) {
+    this.cab.onFallback = fn;
+  }
+
+  /** Vuelve a pedir la IR actual (p. ej. tras borrarla o cargarla). */
+  reloadIr() {
+    const ir = this.applied.get('cab')?.ir;
+    this.cab.setIr(ir);
+  }
+
   apply(board: BoardState) {
     const order = board.map((p) => p.type);
     if (order.join() !== this.order.join()) this.wire(order);
@@ -76,6 +111,7 @@ export class EffectChain {
       for (const [key, value] of Object.entries(pedal.params)) {
         if (last?.params[key] !== value) effect.setParam(key, value);
       }
+      if (pedal.type === 'cab' && last?.ir !== pedal.ir) this.cab.setIr(pedal.ir);
       if (last?.enabled !== pedal.enabled) effect.setEnabled(pedal.enabled);
       this.applied.set(pedal.type, { ...pedal, params: { ...pedal.params } });
     }
