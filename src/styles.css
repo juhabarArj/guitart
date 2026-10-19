@@ -127,6 +127,7 @@ input {
   background: var(--plate-2);
   padding: 0.55rem 1rem;
   cursor: pointer;
+  color: inherit;
   text-decoration: none;
   font-weight: 500;
 }
@@ -201,7 +202,7 @@ button:disabled {
   display: grid;
   gap: 1rem;
   grid-template-columns: 1fr;
-  grid-template-areas: 'tuner' 'input' 'monitor' 'recorder';
+  grid-template-areas: 'tuner' 'input' 'monitor' 'board' 'recorder';
 }
 
 @media (min-width: 900px) {
@@ -210,6 +211,7 @@ button:disabled {
     grid-template-areas:
       'tuner input'
       'tuner monitor'
+      'board board'
       'recorder recorder';
   }
 }
@@ -225,6 +227,9 @@ button:disabled {
 }
 .recorder {
   grid-area: recorder;
+}
+.board {
+  grid-area: board;
 }
 
 .panel {
@@ -574,9 +579,244 @@ input[type='range'] {
   color: var(--amber);
 }
 
+/* Pedalera */
+.panel-head.wrap {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.flow {
+  margin: -0.25rem 0 1rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.preset-select select {
+  min-width: 12rem;
+  font-weight: 500;
+}
+
+.preset-dirty {
+  color: var(--amber);
+  font-size: 0.875rem;
+}
+
+.preset-actions,
+.preset-naming {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.preset-naming input {
+  background: var(--plate-2);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-control);
+  padding: 0.5rem 0.7rem;
+  min-width: 12rem;
+}
+
+.btn.primary-soft {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.pedals {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+  gap: 0.75rem;
+}
+
+.pedals.is-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+[data-pedal='gate'] { --pedal: #8a9ba5; }
+[data-pedal='comp'] { --pedal: #4fb0a8; }
+[data-pedal='drive'] { --pedal: #e39b2d; }
+[data-pedal='eq'] { --pedal: #c9bfa4; }
+[data-pedal='chorus'] { --pedal: #6f95e0; }
+[data-pedal='delay'] { --pedal: #a184dc; }
+[data-pedal='reverb'] { --pedal: #57b4d6; }
+
+.pedal {
+  display: flex;
+  flex-direction: column;
+  background: var(--plate-2);
+  border: 1px solid var(--edge);
+  border-top: 5px solid color-mix(in srgb, var(--pedal) 45%, var(--edge));
+  border-radius: 12px;
+  padding: 0.75rem 0.85rem 0.85rem;
+}
+
+.pedal.on {
+  border-top-color: var(--pedal);
+}
+
+.pedal.dragging {
+  outline: 2px dashed var(--amber);
+  outline-offset: 2px;
+  opacity: 0.85;
+}
+
+.pedal-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.pedal-head h3 {
+  margin: 0;
+  font-family: var(--font-face);
+  font-weight: 600;
+  font-size: 1.2rem;
+}
+
+.pedal-handle {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: 1px solid var(--edge);
+  background: var(--plate);
+  cursor: grab;
+  touch-action: none;
+  font-family: var(--font-face);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.pedal-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-around;
+  align-items: flex-start;
+  align-content: flex-start;
+  gap: 0.5rem 0.25rem;
+  flex: 1;
+}
+
+.pedal-choice {
+  flex-basis: 100%;
+}
+
+.segmented.small {
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+}
+
+.segmented.small button {
+  padding: 0.35rem 0.25rem;
+  font-size: 0.875rem;
+}
+
+.footswitch {
+  margin-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background: var(--plate);
+  padding: 0.45rem;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.pedal .lamp {
+  background: color-mix(in srgb, var(--pedal) 25%, var(--plate));
+}
+
+.pedal.on .lamp {
+  background: var(--pedal);
+  box-shadow: 0 0 10px var(--pedal);
+}
+
+/* Potenciómetro */
+.knob {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  width: 4.6rem;
+}
+
+.knob-dial {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 50%;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.knob-dial svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.knob-track,
+.knob-value {
+  fill: none;
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.knob-track {
+  stroke: var(--edge);
+}
+
+.knob-value {
+  stroke: var(--pedal, var(--amber));
+}
+
+.knob-cap {
+  fill: var(--plate);
+  stroke: var(--edge);
+}
+
+.knob-pointer {
+  stroke: var(--silk);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.knob-label {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+}
+
+.knob-readout {
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.rec-source {
+  margin-left: auto;
+  width: min(100%, 16rem);
+  grid-template-columns: 1fr 1fr;
+}
+
 /* Grabación */
 .transport {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 1.25rem;
   margin-bottom: 1rem;

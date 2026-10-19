@@ -1,10 +1,17 @@
 # Guitart
 
-Estudio de guitarra en el navegador: afinador, monitor de escucha y grabación en WAV. PWA instalable, sin backend, publicada en GitHub Pages.
+Estudio de guitarra en el navegador: afinador, pedalera de efectos, monitor de escucha y grabación en WAV. PWA instalable, sin backend, publicada en GitHub Pages.
 
 **Demo:** https://juhabararj.github.io/guitart/
 
-## Fase 1 (esta versión)
+## Fase 2 (esta versión)
+
+- Pedalera de 7 efectos: puerta de ruido, compresor, saturación (overdrive, distorsión, fuzz), ecualizador de 3 bandas, chorus estéreo, delay y reverb
+- Orden de la cadena configurable arrastrando los pedales (ratón, táctil o teclado)
+- Presets: 4 de fábrica, guardar, guardar como, borrar, exportar e importar en JSON
+- Grabación con efectos (estéreo) o en seco
+
+## Fase 1
 
 - Selección de entrada (interfaz USB o micrófono) sin el procesado de voz del navegador
 - Elección de canal (1, 2 o estéreo), ganancia y medidor de nivel con indicador de saturación
@@ -40,7 +47,11 @@ Desactiva la escucha de Guitart si ya oyes la guitarra por los auriculares de la
 
 ```
 public/worklets/capture-processor.js  Captura PCM en el hilo de audio
-src/audio/engine.ts                    Grafo de audio (entrada, canal, ganancia, monitor, captura)
+public/worklets/gate-processor.js     Puerta de ruido
+src/audio/engine.ts                    Grafo de audio (entrada, canal, ganancia, pedalera, monitor, captura)
+src/audio/effects.ts                   Definición y procesado de cada pedal
+src/audio/chain.ts                     Cadena de efectos y estado de la pedalera
+src/presets.ts                         Presets de fábrica, guardado e importación
 src/audio/pitch.ts                     Detección de tono YIN y notas
 src/audio/wav.ts                       Codificador WAV 24 bits
 src/storage/recordings.ts              Grabaciones en IndexedDB
@@ -50,7 +61,7 @@ src/components/                        Afinador, medidor y grabadora
 ## Hoja de ruta
 
 1. ~~MVP: entrada, monitor, afinador, grabación~~
-2. Cadena de efectos reordenable y presets
+2. ~~Cadena de efectos reordenable y presets~~
 3. Simulador de amplificador (AudioWorklet + WASM) y cargador de IR
 4. Looper, metrónomo, caja de ritmos y multipista
 5. MIDI, pedal Bluetooth y presets compartibles

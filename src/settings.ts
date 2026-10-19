@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ChannelMode } from './audio/engine';
+import type { ChannelMode, RecordSource } from './audio/engine';
 
 export interface Settings {
   inputId: string;
@@ -8,6 +8,7 @@ export interface Settings {
   gainDb: number;
   monitorVolume: number;
   a4: number;
+  recordSource: RecordSource;
 }
 
 const KEY = 'guitart:settings';
@@ -17,7 +18,8 @@ const DEFAULTS: Settings = {
   channelMode: 'left',
   gainDb: 0,
   monitorVolume: 0.8,
-  a4: 440
+  a4: 440,
+  recordSource: 'wet'
 };
 
 export function useSettings() {

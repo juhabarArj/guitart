@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AudioEngine } from '../audio/engine';
+import type { AudioEngine, RecordSource } from '../audio/engine';
 import { encodeWav } from '../audio/wav';
 import { deleteRecording, listRecordings, saveRecording, type Recording } from '../storage/recordings';
 
@@ -21,7 +21,7 @@ function Take({ rec, onDelete }: { rec: Recording; onDelete: () => void }) {
         <strong>{rec.name}</strong>
         <span>
           {dateFmt.format(rec.createdAt)}, {clock(rec.duration)}, {rec.sampleRate / 1000} kHz{' '}
-          {rec.channels === 1 ? 'mono' : 'estéreo'}, {mb.toFixed(1)} MB
+          {rec.channels === 1 ? 'mono' : 'estéreo'}, {rec.source === 'wet' ? 'con efectos' : 'en seco'}, {mb.toFixed(1)} MB
         </span>
       </div>
       <audio controls preload="none" src={url} />
@@ -37,7 +37,14 @@ function Take({ rec, onDelete }: { rec: Recording; onDelete: () => void }) {
   );
 }
 
-export function Recorder({ engine, onRecordingChange }: { engine: AudioEngine; onRecordingChange: (on: boolean) => void }) {
+interface RecorderProps {
+  engine: AudioEngine;
+  source: RecordSource;
+  onSource: (s: RecordSource) => void;
+  onRecordingChange: (on: boolean) => void;
+}
+
+export function Recorder({ engine, source, onSource, onRecordingChange }: RecorderProps) {
   const [takes, setTakes] = useState<Recording[]>([]);
   const [recording, setRecording] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -78,6 +85,7 @@ export function Recorder({ engine, onRecordingChange }: { engine: AudioEngine; o
         duration: frames / sampleRate,
         sampleRate,
         channels: channels.length,
+        source,
         blob: encodeWav(channels, sampleRate)
       };
       await saveRecording(rec);
@@ -104,7 +112,7 @@ export function Recorder({ engine, onRecordingChange }: { engine: AudioEngine; o
     <section className="panel recorder" aria-labelledby="rec-title">
       <div className="panel-head">
         <h2 id="rec-title">Grabación</h2>
-        <span className="hint">WAV de 24 bits, sin compresión</span>
+        <span className="hint">WAV de 24 bits, sin compresión. En seco guarda la guitarra sin efectos.</span>
       </div>
 
       <div className="transport">
@@ -120,6 +128,14 @@ export function Recorder({ engine, onRecordingChange }: { engine: AudioEngine; o
         <span className="rec-time" aria-live="off">
           {clock(elapsed)}
         </span>
+        <div className="segmented rec-source" role="group" aria-label="Señal que se graba">
+          <button aria-pressed={source === 'wet'} onClick={() => onSource('wet')} disabled={recording || saving}>
+            Con efectos
+          </button>
+          <button aria-pressed={source === 'dry'} onClick={() => onSource('dry')} disabled={recording || saving}>
+            En seco
+          </button>
+        </div>
       </div>
 
       {error && <p className="notice error">{error}</p>}

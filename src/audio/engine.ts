@@ -1,6 +1,8 @@
+import { EffectChain } from './chain';
 import { detectPitch } from './pitch';
 
 export type ChannelMode = 'left' | 'right' | 'stereo';
+export type RecordSource = 'wet' | 'dry';
 
 export interface LatencyInfo {
   sampleRate: number;
@@ -20,10 +22,11 @@ const toDb = (x: number) => (x > 0 ? 20 * Math.log10(x) : -Infinity);
  *
  *  entrada ─► splitter ─► (canal elegido) ─► ganancia ─┬─► medidor
  *                                                    ├─► afinador
- *                                                    ├─► captura (worklet) ─► silencio ─► salida
- *                                                    └─► monitor ─► salida
+ *                                                    ├─► (captura en seco)
+ *                                                    └─► pedalera ─┬─► monitor ─► salida
+ *                                                                  └─► (captura con efectos)
  *
- * En fases siguientes la cadena de efectos se inserta entre "ganancia" y "monitor".
+ * La captura (worklet) se conecta a la señal seca o a la de la pedalera según la opción elegida.
  */
 export class AudioEngine {
   ctx: AudioContext | null = null;
@@ -35,6 +38,8 @@ export class AudioEngine {
   private meter!: AnalyserNode;
   private tuner!: AnalyserNode;
   private capture!: AudioWorkletNode;
+  chain: EffectChain | null = null;
+  private recordSource: RecordSource = 'wet';
   private meterBuf = new Float32Array(2048);
   private tunerBuf = new Float32Array(4096);
   private channelMode: ChannelMode = 'left';
@@ -44,7 +49,11 @@ export class AudioEngine {
   private async init() {
     if (this.ctx) return;
     const ctx = new AudioContext({ latencyHint: 'interactive' });
-    await ctx.audioWorklet.addModule(`${import.meta.env.BASE_URL}worklets/capture-processor.js`);
+    const base = import.meta.env.BASE_URL;
+    await Promise.all([
+      ctx.audioWorklet.addModule(`${base}worklets/capture-processor.js`),
+      ctx.audioWorklet.addModule(`${base}worklets/gate-processor.js`)
+    ]);
 
     this.inputGain = new GainNode(ctx, { gain: 1 });
     this.monitorGain = new GainNode(ctx, { gain: 0 });
@@ -59,8 +68,10 @@ export class AudioEngine {
 
     this.inputGain.connect(this.meter);
     this.inputGain.connect(this.tuner);
-    this.inputGain.connect(this.capture);
-    this.inputGain.connect(this.monitorGain).connect(ctx.destination);
+    const chain = new EffectChain(ctx);
+    this.inputGain.connect(chain.input);
+    chain.output.connect(this.monitorGain).connect(ctx.destination);
+    this.chain = chain;
     // El worklet necesita estar conectado al destino para que el navegador lo procese
     this.capture.connect(silent).connect(ctx.destination);
 
@@ -72,6 +83,28 @@ export class AudioEngine {
       }
     };
     this.ctx = ctx;
+    this.setRecordSource(this.recordSource);
+  }
+
+  /** Graba la salida de la pedalera (estéreo) o la señal de la guitarra sin efectos. */
+  setRecordSource(source: RecordSource) {
+    this.recordSource = source;
+    if (!this.chain) return;
+    for (const node of [this.inputGain, this.chain.output]) {
+      try {
+        node.disconnect(this.capture);
+      } catch {
+        /* no estaba conectado */
+      }
+    }
+    if (source === 'wet') {
+      this.capture.channelCount = 2;
+      this.capture.channelCountMode = 'explicit';
+      this.chain.output.connect(this.capture);
+    } else {
+      this.capture.channelCountMode = 'max';
+      this.inputGain.connect(this.capture);
+    }
   }
 
   /** Abre una entrada de audio sin el procesado de voz del navegador. */

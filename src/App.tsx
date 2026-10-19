@@ -1,9 +1,44 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AudioEngine, type ChannelMode, type LatencyInfo } from './audio/engine';
+import { normalizeBoard, type BoardState } from './audio/chain';
+import { AudioEngine, type ChannelMode, type LatencyInfo, type RecordSource } from './audio/engine';
 import { LevelMeter } from './components/LevelMeter';
+import { Pedalboard } from './components/Pedalboard';
+import { PresetBar } from './components/PresetBar';
 import { Recorder } from './components/Recorder';
 import { Tuner } from './components/Tuner';
+import {
+  deletePreset,
+  exportPresets,
+  FACTORY_PRESETS,
+  listUserPresets,
+  parsePresetFile,
+  sameBoard,
+  savePreset,
+  type Preset
+} from './presets';
 import { useSettings } from './settings';
+
+const BOARD_KEY = 'guitart:board';
+const PRESET_KEY = 'guitart:preset';
+
+function loadBoard(): BoardState {
+  try {
+    const saved = localStorage.getItem(BOARD_KEY);
+    if (saved) return normalizeBoard(JSON.parse(saved));
+  } catch {
+    /* estado guardado no válido */
+  }
+  return FACTORY_PRESETS[0].board;
+}
+
+function download(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 type Phase = 'idle' | 'starting' | 'running';
 
@@ -38,6 +73,45 @@ export default function App() {
   const [monitorOn, setMonitorOn] = useState(false);
   const [recording, setRecording] = useState(false);
   const [latency, setLatency] = useState<LatencyInfo | null>(null);
+  const [board, setBoard] = useState<BoardState>(loadBoard);
+  const [presetId, setPresetId] = useState<string>(() => localStorage.getItem(PRESET_KEY) ?? FACTORY_PRESETS[0].id);
+  const [userPresets, setUserPresets] = useState<Preset[]>([]);
+
+  useEffect(() => {
+    listUserPresets().then(setUserPresets).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(BOARD_KEY, JSON.stringify(board));
+      localStorage.setItem(PRESET_KEY, presetId);
+    } catch {
+      /* almacenamiento no disponible */
+    }
+  }, [board, presetId]);
+
+  useEffect(() => {
+    if (phase === 'running') engine.chain?.apply(board);
+  }, [engine, phase, board]);
+
+  const currentPreset = [...FACTORY_PRESETS, ...userPresets].find((p) => p.id === presetId);
+  const modified = !currentPreset || !sameBoard(currentPreset.board, board);
+
+  const loadPreset = (id: string) => {
+    const p = [...FACTORY_PRESETS, ...userPresets].find((x) => x.id === id);
+    if (!p) return;
+    setPresetId(id);
+    setBoard(p.board);
+  };
+
+  const storeUserPreset = async (p: Preset) => {
+    await savePreset(p);
+    setUserPresets(await listUserPresets());
+    setPresetId(p.id);
+  };
+
+  const presetError = (e: unknown) =>
+    setError(e instanceof Error ? e.message : 'No se ha podido guardar el preset en este navegador.');
 
   const refreshDevices = useCallback(async () => {
     const all = await navigator.mediaDevices.enumerateDevices();
@@ -70,6 +144,7 @@ export default function App() {
       await open(settings.inputId);
       engine.setChannelMode(settings.channelMode);
       engine.setInputGainDb(settings.gainDb);
+      engine.setRecordSource(settings.recordSource);
       await refreshDevices();
       if (settings.outputId) await engine.setOutputDevice(settings.outputId).catch(() => update({ outputId: '' }));
       setPhase('running');
@@ -129,7 +204,7 @@ export default function App() {
     return (
       <main className="intro">
         <h1 className="wordmark">Guitart</h1>
-        <p className="lede">Afinador, monitor y grabación para tu guitarra, directamente en el navegador.</p>
+        <p className="lede">Afinador, pedalera de efectos y grabación para tu guitarra, directamente en el navegador.</p>
         <button className="btn primary big" onClick={start} disabled={phase === 'starting'}>
           {phase === 'starting' ? 'Abriendo audio…' : 'Activar audio'}
         </button>
@@ -278,7 +353,62 @@ export default function App() {
           )}
         </section>
 
-        <Recorder engine={engine} onRecordingChange={setRecording} />
+        <section className="panel board" aria-labelledby="board-title">
+          <div className="panel-head wrap">
+            <h2 id="board-title">Pedalera</h2>
+            <PresetBar
+              factory={FACTORY_PRESETS}
+              user={userPresets}
+              current={currentPreset}
+              modified={modified}
+              onLoad={loadPreset}
+              onSave={() => currentPreset && storeUserPreset({ ...currentPreset, board }).catch(presetError)}
+              onSaveAs={(name) => storeUserPreset({ id: crypto.randomUUID(), name, board }).catch(presetError)}
+              onDelete={async () => {
+                if (!currentPreset || currentPreset.factory) return;
+                if (!window.confirm(`¿Borrar el preset «${currentPreset.name}»?`)) return;
+                await deletePreset(currentPreset.id);
+                setUserPresets(await listUserPresets());
+                setPresetId('');
+              }}
+              onExport={() => {
+                const name = currentPreset?.name ?? 'Guitart';
+                download(exportPresets([{ id: '', name, board }]), `${name}.guitart.json`);
+              }}
+              onImport={async (file) => {
+                try {
+                  const imported = parsePresetFile(await file.text());
+                  for (const p of imported) await savePreset(p);
+                  setUserPresets(await listUserPresets());
+                  setPresetId(imported[0].id);
+                  setBoard(imported[0].board);
+                  setError(null);
+                } catch (e) {
+                  setError(
+                    e instanceof SyntaxError ? 'El archivo no es un JSON válido.' : e instanceof Error ? e.message : String(e)
+                  );
+                }
+              }}
+            />
+          </div>
+          <p className="hint flow">La señal entra por el pedal 1 y sale por el último. Arrastra un pedal por su número para cambiar el orden.</p>
+          <Pedalboard
+            board={board}
+            onChange={(b) => {
+              setBoard(b);
+            }}
+          />
+        </section>
+
+        <Recorder
+          engine={engine}
+          source={settings.recordSource}
+          onSource={(s: RecordSource) => {
+            update({ recordSource: s });
+            engine.setRecordSource(s);
+          }}
+          onRecordingChange={setRecording}
+        />
       </div>
     </div>
   );
