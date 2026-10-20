@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { ChannelMode, RecordSource } from './audio/engine';
+import { DEFAULT_BINDINGS, type Bindings } from './control/actions';
 
 export type ThemeName = 'auto' | 'light' | 'dark' | 'ebook' | 'dire';
-export type TabName = 'audio' | 'board' | 'looper' | 'studio';
+export type TabName = 'audio' | 'board' | 'looper' | 'studio' | 'control';
 
 export interface Settings {
   inputId: string;
@@ -19,6 +20,9 @@ export interface Settings {
   tuning: string;
   /** Latencias medidas (ms) por combinación de entrada, salida y modo de latencia */
   measured: Record<string, number>;
+  bindings: Bindings;
+  /** Los cambios de programa MIDI eligen preset */
+  midiPc: boolean;
 }
 
 const KEY = 'guitart:settings';
@@ -35,7 +39,9 @@ const DEFAULTS: Settings = {
   lowLatency: false,
   wakeLock: true,
   tuning: 'standard',
-  measured: {}
+  measured: {},
+  bindings: DEFAULT_BINDINGS,
+  midiPc: true
 };
 
 export function useSettings() {

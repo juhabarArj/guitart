@@ -4,6 +4,7 @@ import type { IrLoader } from '../audio/effects';
 import type { AudioEngine, RecordSource } from '../audio/engine';
 import { renderMix, type StudioTrack } from '../audio/studio';
 import { encodeWav } from '../audio/wav';
+import { useAction, type Register } from '../control/registry';
 import { listRecordings, saveRecording, type Recording } from '../storage/recordings';
 import { loadProject, saveProject } from '../storage/studio';
 
@@ -17,6 +18,7 @@ interface Props {
   irLoaderFor: (ctx: BaseAudioContext) => IrLoader;
   onTakeSaved: () => void;
   theme: string;
+  register: Register;
 }
 
 type Mode = 'idle' | 'playing' | 'recording' | 'working';
@@ -93,7 +95,7 @@ function drawLane(canvas: HTMLCanvasElement, track: StudioTrack, total: number) 
   }
 }
 
-export function Studio({ engine, active, latencyMs, busy, onBusy, board, irLoaderFor, onTakeSaved, theme }: Props) {
+export function Studio({ engine, active, latencyMs, busy, onBusy, board, irLoaderFor, onTakeSaved, theme, register }: Props) {
   const [tracks, setTracks] = useState<StudioTrack[]>(() => [1, 2, 3, 4].map(newTrack));
   const [loaded, setLoaded] = useState(false);
   const [armed, setArmed] = useState<string | null>(null);
@@ -286,6 +288,25 @@ export function Studio({ engine, active, latencyMs, busy, onBusy, board, irLoade
       setMode('idle');
     }
   };
+
+  useAction(register, 'studio.play', () => {
+    if (mode === 'playing' || mode === 'recording') {
+      stop();
+      return 'Estudio: parar';
+    }
+    if (mode !== 'idle' || !tracks.some((t) => t.audio)) return 'Estudio: nada que reproducir';
+    play();
+    return 'Estudio: reproducir';
+  });
+  useAction(register, 'studio.record', () => {
+    if (mode === 'recording') {
+      stop();
+      return 'Estudio: grabación detenida';
+    }
+    if (mode !== 'idle' || !armed || busy) return 'Estudio: marca una pista con «Grabar aquí»';
+    record();
+    return 'Estudio: grabando';
+  });
 
   const idle = mode === 'idle';
   const hasAudio = tracks.some((t) => t.audio);

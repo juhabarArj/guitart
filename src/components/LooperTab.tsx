@@ -3,6 +3,7 @@ import { PATTERNS, resizeSteps, VOICES, type DrumVoice } from '../audio/drums';
 import type { AudioEngine } from '../audio/engine';
 import type { LooperState, LooperStatus } from '../audio/looper';
 import type { RhythmSettings } from '../audio/transport';
+import { useAction, type Register } from '../control/registry';
 
 interface RhythmPrefs extends RhythmSettings {
   patternId: string; // 'custom' si se ha editado
@@ -84,7 +85,14 @@ const COPY: Record<LooperState, { title: string; hint: string; main: string }> =
   }
 };
 
-export function LooperTab({ engine, active, latencyMs }: { engine: AudioEngine; active: boolean; latencyMs: number }) {
+interface LooperTabProps {
+  engine: AudioEngine;
+  active: boolean;
+  latencyMs: number;
+  register: Register;
+}
+
+export function LooperTab({ engine, active, latencyMs, register }: LooperTabProps) {
   const [prefs, update] = usePrefs();
   const [playing, setPlaying] = useState(engine.transport.playing);
   const [status, setStatus] = useState<LooperStatus>(engine.looper.status);
@@ -179,21 +187,6 @@ export function LooperTab({ engine, active, latencyMs }: { engine: AudioEngine; 
     engine.looper.send('rec');
   };
 
-  // Barra espaciadora = botón principal del looper (con la pestaña visible y fuera de campos de texto)
-  const pressRef = useRef(pressMain);
-  pressRef.current = pressMain;
-  useEffect(() => {
-    if (!active) return;
-    const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (e.code !== 'Space' || ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(tag)) return;
-      e.preventDefault();
-      pressRef.current();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [active]);
-
   const tap = () => {
     const now = performance.now();
     const list = taps.current.filter((t) => now - t < 2500);
@@ -205,6 +198,31 @@ export function LooperTab({ engine, active, latencyMs }: { engine: AudioEngine; 
       update({ bpm: Math.max(40, Math.min(240, Math.round(60000 / avg))) });
     }
   };
+
+  useAction(register, 'looper.main', () => {
+    const s = statusRef.current;
+    const label = s.state === 'recording' && s.pending === 'rec' ? '' : COPY[s.state].main;
+    pressMain();
+    return label ? `Looper: ${label}` : undefined;
+  });
+  useAction(register, 'looper.stop', () => {
+    const stopped = statusRef.current.state === 'stopped';
+    engine.looper.send(stopped ? 'play' : 'stop');
+    return stopped ? 'Looper: reproducir' : 'Looper: parar';
+  });
+  useAction(register, 'looper.undo', () => {
+    engine.looper.send('undo');
+    return 'Looper: deshacer capa';
+  });
+  useAction(register, 'rhythm.toggle', () => {
+    const was = engine.transport.playing;
+    toggleTransport();
+    return was ? 'Ritmo parado' : 'Ritmo en marcha';
+  });
+  useAction(register, 'rhythm.tap', () => {
+    tap();
+    return 'Marcando el tempo';
+  });
 
   const setMeter = (beatsPerBar: number) =>
     update({ beatsPerBar, steps: resizeSteps(prefs.steps, beatsPerBar), patternId: 'custom' });
@@ -232,7 +250,7 @@ export function LooperTab({ engine, active, latencyMs }: { engine: AudioEngine; 
       <section className="panel looper" data-state={st} aria-labelledby="looper-title">
         <div className="panel-head">
           <h2 id="looper-title">Looper</h2>
-          <span className="hint">Barra espaciadora: botón principal</span>
+          <span className="hint">Atajos y pedales: pestaña Ajustes</span>
         </div>
 
         <div className="looper-status" aria-live="polite">

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { normalizeBoard, type BoardState } from './audio/chain';
+import { DEF_BY_TYPE } from './audio/effects';
 import { AudioEngine, type ChannelMode, type LatencyInfo, type RecordSource } from './audio/engine';
 import { LevelMeter } from './components/LevelMeter';
 import { LooperTab } from './components/LooperTab';
@@ -7,6 +8,10 @@ import { Pedalboard } from './components/Pedalboard';
 import { PresetBar } from './components/PresetBar';
 import { Recorder } from './components/Recorder';
 import { Studio } from './components/Studio';
+import { ControlTab } from './components/ControlTab';
+import { ACTIONS, type ActionId } from './control/actions';
+import { controlInputs, type ControlEvent } from './control/inputs';
+import { useAction, type ActionHandler, type Register } from './control/registry';
 import { encodeWav } from './audio/wav';
 import { saveRecording, type Recording } from './storage/recordings';
 import { Tuner } from './components/Tuner';
@@ -52,7 +57,8 @@ const TABS: { value: TabName; label: string }[] = [
   { value: 'audio', label: 'Afinador y audio' },
   { value: 'board', label: 'Pedalera y grabación' },
   { value: 'looper', label: 'Looper y ritmo' },
-  { value: 'studio', label: 'Estudio' }
+  { value: 'studio', label: 'Estudio' },
+  { value: 'control', label: 'Ajustes' }
 ];
 
 function describeError(e: unknown): string {
@@ -93,10 +99,67 @@ export default function App() {
   const [switching, setSwitching] = useState(false);
   const [studioBusy, setStudioBusy] = useState(false);
   const [takesVersion, setTakesVersion] = useState(0);
+
+  // ── Control: acciones disparadas por teclado, MIDI o pedal Bluetooth ──
+  const handlers = useRef(new Map<ActionId, ActionHandler>());
+  const [toast, setToast] = useState<{ text: string; n: number } | null>(null);
+  const [learning, setLearning] = useState<ActionId | null>(null);
+  const [lastEvent, setLastEvent] = useState<ControlEvent | null>(null);
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const learningRef = useRef(learning);
+  learningRef.current = learning;
+
+  const register = useCallback<Register>((id, fn) => {
+    handlers.current.set(id, fn);
+    return () => {
+      if (handlers.current.get(id) === fn) handlers.current.delete(id);
+    };
+  }, []);
+
+  const notify = useCallback((text: string) => setToast((t) => ({ text, n: (t?.n ?? 0) + 1 })), []);
+
+  const dispatch = useCallback(
+    (id: ActionId) => {
+      const fn = handlers.current.get(id);
+      if (!fn) return;
+      const text = fn();
+      notify(text || ACTIONS.find((a) => a.id === id)?.label || id);
+    },
+    [notify]
+  );
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(null), 1600);
+    return () => window.clearTimeout(t);
+  }, [toast]);
+
+  /** Asigna una tecla o mensaje a una acción, quitándolo de cualquier otra para que no haya duplicados. */
+  const assign = useCallback(
+    (id: ActionId, binding: string) => {
+      const current = settingsRef.current.bindings;
+      const next = Object.fromEntries(
+        Object.entries(current).map(([k, v]) => [k, (v ?? []).filter((b) => b !== binding)])
+      ) as typeof current;
+      next[id] = [...(next[id] ?? []), binding];
+      update({ bindings: next });
+      setLearning(null);
+      notify(`Asignado: ${binding.startsWith('key:') ? 'tecla' : 'MIDI'}`);
+    },
+    [update, notify]
+  );
+
+  const actionsFor = (binding: string) =>
+    (Object.entries(settingsRef.current.bindings) as [ActionId, string[]][])
+      .filter(([, list]) => list?.includes(binding))
+      .map(([id]) => id);
   const [latency, setLatency] = useState<LatencyInfo | null>(null);
   const [board, setBoard] = useState<BoardState>(loadBoard);
   const [presetId, setPresetId] = useState<string>(() => localStorage.getItem(PRESET_KEY) ?? FACTORY_PRESETS[0].id);
   const [userPresets, setUserPresets] = useState<Preset[]>([]);
+  const userPresetsRef = useRef(userPresets);
+  userPresetsRef.current = userPresets;
   const [irs, setIrs] = useState<StoredIr[]>([]);
   const irCache = useRef(new Map<string, AudioBuffer>());
 
@@ -271,6 +334,71 @@ export default function App() {
     return threshold;
   };
 
+  // Teclado (incluye pedales pasapáginas, que se comportan como teclas)
+  useEffect(() => {
+    if (phase !== 'running') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+      if (learningRef.current) {
+        e.preventDefault();
+        if (e.code === 'Escape') setLearning(null);
+        else assign(learningRef.current, `key:${e.code}`);
+        return;
+      }
+      if (e.defaultPrevented) return;
+      const el = e.target as HTMLElement;
+      const tag = el?.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || el?.isContentEditable) return;
+      if (el?.getAttribute?.('role') === 'tab' || el?.getAttribute?.('role') === 'slider') return;
+      if (tag === 'BUTTON' && (e.code === 'Space' || e.code === 'Enter')) return;
+      const ids = actionsFor(`key:${e.code}`);
+      if (!ids.length) return;
+      e.preventDefault();
+      ids.forEach(dispatch);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [phase, assign, dispatch]);
+
+  // MIDI y Bluetooth
+  useEffect(
+    () =>
+      controlInputs.subscribe((ev) => {
+        setLastEvent(ev);
+        if (!ev.trigger) return;
+        const binding = `midi:${ev.key}`;
+        if (learningRef.current) return assign(learningRef.current, binding);
+        const ids = actionsFor(binding);
+        if (ids.length) return ids.forEach(dispatch);
+        if (ev.key.startsWith('pc:') && settingsRef.current.midiPc) {
+          const all = [...FACTORY_PRESETS, ...userPresetsRef.current];
+          const p = all[ev.value];
+          if (p) {
+            loadPresetRef.current(p.id);
+            notify(`Preset: ${p.name}`);
+          }
+        }
+      }),
+    [assign, dispatch, notify]
+  );
+
+  useAction(register, 'preset.next', () => stepPreset(1));
+  useAction(register, 'preset.prev', () => stepPreset(-1));
+  useAction(register, 'tuner.mute', () => {
+    setTunerMute((m) => !m);
+    return tunerMute ? 'Salida activada' : 'Salida silenciada';
+  });
+  for (let i = 1; i <= 9; i++) {
+    // eslint-disable-next-line react-hooks/rules-of-hooks -- número fijo de llamadas
+    useAction(register, `pedal.${i}`, () => {
+      const p = board[i - 1];
+      if (!p) return;
+      setBoard((b) => b.map((x, k) => (k === i - 1 ? { ...x, enabled: !x.enabled } : x)));
+      const name = DEF_BY_TYPE[p.type].name;
+      return `${name}: ${p.enabled ? 'apagado' : 'activado'}`;
+    });
+  }
+
   const currentPreset = [...FACTORY_PRESETS, ...userPresets].find((p) => p.id === presetId);
   const modified = !currentPreset || !sameBoard(currentPreset.board, board);
 
@@ -280,6 +408,16 @@ export default function App() {
     setPresetId(id);
     setBoard(p.board);
   };
+  const loadPresetRef = useRef(loadPreset);
+  loadPresetRef.current = loadPreset;
+
+  function stepPreset(dir: 1 | -1) {
+    const all = [...FACTORY_PRESETS, ...userPresets];
+    const i = all.findIndex((p) => p.id === presetId);
+    const next = all[(Math.max(i, dir > 0 ? -1 : 0) + dir + all.length) % all.length];
+    loadPreset(next.id);
+    return `Preset: ${next.name}`;
+  }
 
   const storeUserPreset = async (p: Preset) => {
     await savePreset(p);
@@ -685,6 +823,7 @@ export default function App() {
 
         <Recorder
           engine={engine}
+          register={register}
           version={takesVersion}
           onReamp={reampTake}
           blocked={studioBusy}
@@ -698,7 +837,7 @@ export default function App() {
       </div>
 
       <div className="layout" role="tabpanel" id="panel-looper" aria-labelledby="tab-looper" hidden={tab !== 'looper'}>
-        <LooperTab engine={engine} active={tab === 'looper'} latencyMs={measuredMs ?? totalLatency} />
+        <LooperTab engine={engine} active={tab === 'looper'} latencyMs={measuredMs ?? totalLatency} register={register} />
       </div>
 
       <div className="layout" role="tabpanel" id="panel-studio" aria-labelledby="tab-studio" hidden={tab !== 'studio'}>
@@ -714,8 +853,27 @@ export default function App() {
           irLoaderFor={irLoaderFor}
           onTakeSaved={() => setTakesVersion((v) => v + 1)}
           theme={settings.theme}
+          register={register}
         />
       </div>
+
+      <div className="layout" role="tabpanel" id="panel-control" aria-labelledby="tab-control" hidden={tab !== 'control'}>
+        <ControlTab
+          bindings={settings.bindings}
+          onBindings={(bindings) => update({ bindings })}
+          learning={learning}
+          onLearn={setLearning}
+          lastEvent={lastEvent}
+          midiPc={settings.midiPc}
+          onMidiPc={(midiPc) => update({ midiPc })}
+        />
+      </div>
+
+      {toast && (
+        <div className="toast" role="status" key={toast.n}>
+          {toast.text}
+        </div>
+      )}
     </div>
   );
 }

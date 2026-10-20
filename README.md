@@ -4,7 +4,16 @@ Estudio de guitarra en el navegador: afinador, simulador de amplificador, pedale
 
 **Demo:** https://juhabararj.github.io/guitart/
 
-## Fase 5b (esta versión, 0.7)
+## Fase 6 (esta versión, 1.0)
+
+- Nueva pestaña «Ajustes» con atajos y pedales que funcionan desde cualquier pestaña: looper, ritmo, grabación, estudio, presets, pedales por posición y silencio del afinador
+- Asignación por aprendizaje: pulsa Asignar y después la tecla o el interruptor MIDI
+- MIDI por cable o USB (Web MIDI) y pedales Bluetooth MIDI (Web Bluetooth). Los pedales pasapáginas funcionan como teclado
+- Los cambios de programa MIDI pueden elegir preset
+- Aviso en pantalla cada vez que se dispara una acción
+- Copia de seguridad completa en un archivo (ajustes, presets e IR, y opcionalmente tomas y proyecto del Estudio) y restauración
+
+## Fase 5b (0.7)
 
 - Nueva pestaña «Estudio»: multipista de 4 pistas con grabación sobre las demás, volumen, panorama, silencio y solo, cabezal movible y formas de onda
 - Las tomas se alinean con la latencia medida y empiezan en el instante exacto programado
@@ -99,6 +108,8 @@ src/audio/drums.ts                     Sonidos de batería y patrones
 src/audio/looper.ts                    Control del looper
 src/audio/studio.ts                    Reproductor y mezcla del multipista
 src/storage/studio.ts                  Proyecto del multipista en IndexedDB
+src/storage/backup.ts                  Copia de seguridad completa
+src/control/                           Acciones, asignaciones, teclado, MIDI y Bluetooth
 src/audio/engine.ts                    Grafo de audio (entrada, canal, ganancia, pedalera, monitor, captura)
 src/audio/effects.ts                   Definición y procesado de cada pedal
 src/audio/chain.ts                     Cadena de efectos y estado de la pedalera
@@ -117,5 +128,5 @@ src/components/                        Afinador, medidor y grabadora
 3. ~~Simulador de amplificador y cargador de IR~~
 4. ~~Audio y latencia~~
 5. ~~Looper y estudio: looper, metrónomo, caja de ritmos, multipista y re-amp~~
-6. **Control.** MIDI, pedal Bluetooth, atajos de teclado y copia de seguridad completa de presets e IR
+6. ~~Control: MIDI, pedal Bluetooth, atajos de teclado y copia de seguridad~~
 7. **Futuro.** Modelos de amplificador neuronales (NAM) en WASM

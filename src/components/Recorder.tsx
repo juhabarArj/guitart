@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AudioEngine, RecordSource } from '../audio/engine';
 import { encodeWav } from '../audio/wav';
+import { useAction, type Register } from '../control/registry';
 import { deleteRecording, listRecordings, saveRecording, type Recording } from '../storage/recordings';
 
 const clock = (s: number) => {
@@ -62,12 +63,13 @@ interface RecorderProps {
   onReamp: (rec: Recording) => Promise<Recording>;
   /** Otra sección (el multipista) está usando la grabación */
   blocked: boolean;
+  register: Register;
   source: RecordSource;
   onSource: (s: RecordSource) => void;
   onRecordingChange: (on: boolean) => void;
 }
 
-export function Recorder({ engine, version, onReamp, blocked, source, onSource, onRecordingChange }: RecorderProps) {
+export function Recorder({ engine, version, onReamp, blocked, register, source, onSource, onRecordingChange }: RecorderProps) {
   const [takes, setTakes] = useState<Recording[]>([]);
   const [recording, setRecording] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -125,6 +127,16 @@ export function Recorder({ engine, version, onReamp, blocked, source, onSource, 
       onRecordingChange(false);
     }
   };
+
+  useAction(register, 'recorder.toggle', () => {
+    if (recording) {
+      stop();
+      return 'Grabación detenida';
+    }
+    if (saving || blocked) return 'No se puede grabar ahora';
+    start();
+    return 'Grabando';
+  });
 
   const remove = async (id: string) => {
     await deleteRecording(id);

@@ -1686,3 +1686,152 @@ input[type='range'] {
   color: var(--tuned);
   font-weight: 600;
 }
+
+/* Fase 6: control y copia de seguridad */
+.control-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+@media (min-width: 1000px) {
+  .control-layout {
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  }
+}
+
+.action-group h3 {
+  margin: 1rem 0 0.4rem;
+  font-family: var(--font-face);
+  font-weight: 600;
+  font-size: 1.05rem;
+  color: var(--muted);
+}
+
+.actions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.actions li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--edge);
+}
+
+.actions li.learning {
+  background: color-mix(in srgb, var(--amber) 10%, transparent);
+}
+
+.action-label {
+  font-size: 0.9375rem;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  justify-content: flex-end;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.1rem 0.2rem 0.1rem 0.5rem;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  background: var(--plate-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.chip button {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 0.2rem;
+}
+
+.chip button:hover {
+  color: var(--rec);
+}
+
+.notice.learn {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.control-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.25rem 0 0.75rem;
+}
+
+.file-btn {
+  cursor: pointer;
+}
+
+.midi-info {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+}
+
+.midi-info dt {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.midi-info dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.notice p {
+  margin: 0 0 0.5rem;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 20;
+  padding: 0.6rem 1.1rem;
+  border-radius: 999px;
+  background: var(--silk);
+  color: var(--steel);
+  font-weight: 600;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.3);
+  animation: toast-in 0.15s ease-out;
+  max-width: calc(100vw - 2rem);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}
