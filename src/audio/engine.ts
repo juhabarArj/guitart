@@ -1,9 +1,14 @@
 import { EffectChain, type BoardState } from './chain';
+import { StudioPlayer } from './studio';
+import { PATTERNS } from './drums';
 import type { IrLoader } from './effects';
+import { Looper } from './looper';
 import { detectPitch } from './pitch';
+import { Transport } from './transport';
 
 export type ChannelMode = 'left' | 'right' | 'stereo';
-export type RecordSource = 'wet' | 'dry';
+/** wet: todo lo que suena · guitar: solo la guitarra con efectos · dry: guitarra sin efectos */
+export type RecordSource = 'wet' | 'guitar' | 'dry';
 
 export interface LatencyInfo {
   sampleRate: number;
@@ -41,7 +46,9 @@ function protectCurve(): Float32Array<ArrayBuffer> {
  *                                                    ├─► afinador
  *                                                    ├─► (captura en seco)
  *                                                    └─► pedalera ─► protección ─┬─► silencio de afinador ─► monitor ─► salida
- *                                                                               └─► (captura con efectos)
+ *                                                                               ├─► looper ─► salida
+ *                                                                               └─► mezcla ─► (captura en modo mezcla)
+ *  reloj de tempo (metrónomo y batería) ─► salida y mezcla
  *
  * El contexto de audio se crea con la frecuencia de muestreo de la interfaz para evitar remuestreos.
  * Si cambia la entrada a otra frecuencia, o el modo de latencia, el grafo se reconstruye y se
@@ -61,6 +68,20 @@ export class AudioEngine {
   private capture!: AudioWorkletNode;
   private protect!: WaveShaperNode;
   private silent!: GainNode;
+  /** Todo lo que suena (guitarra con efectos, looper y ritmo): es lo que se graba en modo mezcla */
+  private mixBus!: GainNode;
+  readonly looper = new Looper();
+  readonly studio = new StudioPlayer();
+  readonly transport = new Transport({
+    bpm: 100,
+    beatsPerBar: 4,
+    metronome: true,
+    metronomeVolume: 0.6,
+    drums: false,
+    drumVolume: 0.7,
+    swing: 0,
+    steps: PATTERNS[0].steps
+  });
   private meterBuf = new Float32Array(2048);
   private tunerBuf = new Float32Array(4096);
   private chunks: Float32Array[][] = [];
@@ -90,7 +111,7 @@ export class AudioEngine {
     }
     const base = import.meta.env.BASE_URL;
     await Promise.all(
-      ['capture', 'gate', 'comp', 'probe'].map((n) => ctx.audioWorklet.addModule(`${base}worklets/${n}-processor.js`))
+      ['capture', 'gate', 'comp', 'probe', 'looper'].map((n) => ctx.audioWorklet.addModule(`${base}worklets/${n}-processor.js`))
     );
 
     this.inputGain = new GainNode(ctx, { gain: 1 });
@@ -121,6 +142,14 @@ export class AudioEngine {
       .connect(ctx.destination);
     // Los worklets necesitan estar conectados al destino para que el navegador los procese
     this.capture.connect(this.silent);
+
+    this.mixBus = new GainNode(ctx);
+    this.protect.connect(this.mixBus);
+    this.looper.attach(ctx, this.protect, ctx.destination);
+    this.looper.output!.connect(this.mixBus);
+    this.transport.attach(ctx, ctx.destination);
+    this.transport.output!.connect(this.mixBus);
+    this.studio.attach(ctx, ctx.destination, this.mixBus);
 
     this.capture.port.onmessage = (e: MessageEvent) => {
       if (e.data.type === 'chunk') this.chunks.push(e.data.channels);
@@ -273,17 +302,17 @@ export class AudioEngine {
   setRecordSource(source: RecordSource) {
     this.state.recordSource = source;
     if (!this.ctx) return;
-    for (const node of [this.inputGain, this.protect]) {
+    for (const node of [this.inputGain, this.mixBus, this.protect]) {
       try {
         node.disconnect(this.capture);
       } catch {
         /* no estaba conectado */
       }
     }
-    if (source === 'wet') {
+    if (source === 'wet' || source === 'guitar') {
       this.capture.channelCount = 2;
       this.capture.channelCountMode = 'explicit';
-      this.protect.connect(this.capture);
+      (source === 'wet' ? this.mixBus : this.protect).connect(this.capture);
     } else {
       this.capture.channelCountMode = 'max';
       this.inputGain.connect(this.capture);
@@ -415,9 +444,50 @@ export class AudioEngine {
     return { ms: (median / sr) * 1000, clicks: consistent.length };
   }
 
-  startRecording() {
+  get recordSource() {
+    return this.state.recordSource;
+  }
+
+  /** Empieza a grabar ya, o en el instante "at" del contexto (s) para alinear con la reproducción. */
+  startRecording(at?: number) {
     this.chunks = [];
-    this.capture.port.postMessage({ cmd: 'start' });
+    const frame = at != null && this.ctx ? Math.round(at * this.ctx.sampleRate) : 0;
+    this.capture.port.postMessage({ cmd: 'start', at: frame });
+  }
+
+  /**
+   * Re-amp: pasa una grabación en seco por una pedalera, fuera de tiempo real.
+   * Devuelve audio estéreo con la cola de reverb/delay recortada donde se vuelve silencio.
+   */
+  async reamp(
+    channels: Float32Array[],
+    sampleRate: number,
+    board: BoardState,
+    irLoaderFor: (ctx: BaseAudioContext) => IrLoader,
+    tailSeconds = 4
+  ): Promise<Float32Array[]> {
+    const frames = channels[0]?.length ?? 0;
+    const off = new OfflineAudioContext(2, frames + Math.round(tailSeconds * sampleRate), sampleRate);
+    const base = import.meta.env.BASE_URL;
+    await Promise.all(['gate', 'comp'].map((n) => off.audioWorklet.addModule(`${base}worklets/${n}-processor.js`)));
+    const buf = off.createBuffer(channels.length, frames, sampleRate);
+    channels.forEach((c, i) => buf.copyToChannel(new Float32Array(c), i));
+    const src = new AudioBufferSourceNode(off, { buffer: buf });
+    const chain = new EffectChain(off);
+    chain.setIrLoader(irLoaderFor(off));
+    chain.apply(board);
+    await chain.whenReady();
+    const protectIn = new GainNode(off, { gain: 0.5 });
+    const protect = new WaveShaperNode(off, { curve: protectCurve() });
+    src.connect(chain.input);
+    chain.output.connect(protectIn).connect(protect).connect(off.destination);
+    src.start(0);
+    const out = await off.startRendering();
+    const l = out.getChannelData(0);
+    const r = out.getChannelData(1);
+    let end = l.length;
+    while (end > frames && Math.abs(l[end - 1]) < 1e-4 && Math.abs(r[end - 1]) < 1e-4) end--;
+    return [l.slice(0, end), r.slice(0, end)];
   }
 
   async stopRecording(): Promise<{ channels: Float32Array[]; sampleRate: number }> {

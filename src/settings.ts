@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ChannelMode, RecordSource } from './audio/engine';
 
 export type ThemeName = 'auto' | 'light' | 'dark' | 'ebook' | 'dire';
-export type TabName = 'audio' | 'board';
+export type TabName = 'audio' | 'board' | 'looper' | 'studio';
 
 export interface Settings {
   inputId: string;

@@ -64,7 +64,7 @@ export class EffectChain {
   private order: EffectType[] = [];
   private applied = new Map<EffectType, PedalState>();
 
-  constructor(ctx: AudioContext) {
+  constructor(ctx: BaseAudioContext) {
     this.input = new GainNode(ctx);
     this.output = new GainNode(ctx);
     for (const type of DEFAULT_ORDER) this.effects.set(type, createEffect(ctx, type));
@@ -86,6 +86,10 @@ export class EffectChain {
 
   private get cab() {
     return this.effects.get('cab') as Cab;
+  }
+
+  whenReady() {
+    return this.cab.whenReady();
   }
 
   setIrLoader(loader: IrLoader) {

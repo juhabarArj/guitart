@@ -272,6 +272,7 @@ button:disabled {
 
 .layout {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
 }
 
@@ -1225,4 +1226,463 @@ input[type='range'] {
 
 .gate-auto .hint {
   font-size: 0.8125rem;
+}
+
+/* Fase 5: looper, tempo y caja de ritmos */
+.looper-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+
+@media (min-width: 900px) {
+  .looper-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  }
+}
+
+.looper {
+  --state: var(--muted);
+}
+.looper[data-state='armed'] {
+  --state: var(--amber);
+}
+.looper[data-state='recording'],
+.looper[data-state='overdub'] {
+  --state: var(--rec);
+}
+.looper[data-state='playing'] {
+  --state: var(--tuned);
+}
+
+.looper-status {
+  display: flex;
+  gap: 0.9rem;
+  align-items: flex-start;
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  background: var(--plate-2);
+  border: 1px solid var(--edge);
+  border-left: 4px solid var(--state);
+  min-height: 6.2rem;
+}
+
+.looper-status strong {
+  display: block;
+  font-family: var(--font-face);
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--state);
+}
+
+.looper[data-state='empty'] .looper-status strong,
+.looper[data-state='stopped'] .looper-status strong {
+  color: var(--silk);
+}
+
+.looper-status p {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.looper-lamp {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 0.45rem;
+  border-radius: 50%;
+  background: var(--state);
+}
+
+.looper[data-state='recording'] .looper-lamp,
+.looper[data-state='overdub'] .looper-lamp,
+.looper[data-state='armed'] .looper-lamp {
+  box-shadow: 0 0 12px var(--state);
+  animation: rec-pulse 1s ease-in-out infinite;
+}
+
+.looper-progress {
+  --p: 0;
+  margin-top: 1rem;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--steel);
+  overflow: hidden;
+}
+
+.looper-bar {
+  height: 100%;
+  width: 100%;
+  background: var(--state);
+  transform-origin: left;
+  transform: scaleX(var(--p));
+}
+
+.looper[data-state='recording'] .looper-bar {
+  opacity: 0.5;
+}
+
+.looper-meta {
+  display: flex;
+  justify-content: space-between;
+  margin: 0.35rem 0 1rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.looper-main {
+  width: 100%;
+  padding: 1.1rem;
+  border-radius: 14px;
+  border: 2px solid var(--state);
+  background: color-mix(in srgb, var(--state) 14%, var(--plate));
+  font-family: var(--font-face);
+  font-size: 1.6rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.looper[data-state='empty'] .looper-main,
+.looper[data-state='stopped'] .looper-main {
+  border-color: var(--rec);
+  background: color-mix(in srgb, var(--rec) 12%, var(--plate));
+}
+
+.looper-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0 1.25rem;
+}
+
+.guide {
+  margin-top: 1rem;
+  border-top: 1px solid var(--edge);
+  padding-top: 0.75rem;
+}
+
+.guide ol {
+  margin: 0.6rem 0 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.guide strong {
+  color: var(--silk);
+}
+
+.bpm {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.bpm .btn {
+  min-width: 2.6rem;
+}
+
+.bpm-value {
+  font-family: var(--font-face);
+  font-size: 2.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 5.5rem;
+  text-align: center;
+  line-height: 1;
+}
+
+.bpm-value small {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.bpm .btn:last-child {
+  margin-left: auto;
+}
+
+.beats {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.9rem 0;
+}
+
+.beats span {
+  flex: 1;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--edge);
+}
+
+.beats span[data-on='on'] {
+  background: var(--amber);
+}
+
+.beats span[data-on='accent'] {
+  background: var(--rec);
+}
+
+.beats span[data-on='count'] {
+  background: var(--tuned);
+}
+
+.tempo-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.tempo .check {
+  margin-bottom: 0.75rem;
+}
+
+.grid-scroll {
+  overflow-x: auto;
+  margin-bottom: 0.4rem;
+}
+
+.drum-grid {
+  border-collapse: separate;
+  border-spacing: 3px;
+  width: 100%;
+}
+
+.drum-grid th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  white-space: nowrap;
+  padding-right: 0.4rem;
+}
+
+.drum-grid td.beat-start {
+  padding-left: 5px;
+}
+
+.drum-grid button {
+  display: block;
+  width: 100%;
+  min-width: 1.15rem;
+  height: 1.7rem;
+  border-radius: 4px;
+  border: 1px solid var(--edge);
+  background: var(--plate-2);
+  cursor: pointer;
+  padding: 0;
+}
+
+.drum-grid button[data-v='soft'] {
+  background: color-mix(in srgb, var(--amber) 45%, var(--plate-2));
+}
+
+.drum-grid button[data-v='full'] {
+  background: var(--amber);
+  border-color: var(--amber);
+}
+
+.drum-grid button[data-now='1'] {
+  outline: 2px solid var(--silk);
+  outline-offset: -2px;
+}
+
+/* Fase 5b: estudio multipista */
+.studio-transport {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.rec-button.small {
+  padding: 0.45rem 1rem 0.45rem 0.8rem;
+  font-size: 1.05rem;
+}
+
+.rec-button.small .rec-dot {
+  width: 12px;
+  height: 12px;
+}
+
+.studio-time {
+  font-family: var(--font-face);
+  font-size: 1.6rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 5.5rem;
+  text-align: right;
+}
+
+.studio-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.studio-options .check {
+  max-width: 24rem;
+}
+
+.field.inline {
+  margin: 0;
+}
+
+.field.inline select {
+  width: auto;
+}
+
+.tracks {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.6rem;
+}
+
+.track {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+  padding: 0.6rem;
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  background: var(--plate-2);
+}
+
+.track.armed {
+  border-color: var(--rec);
+}
+
+@media (min-width: 900px) {
+  .track {
+    grid-template-columns: 22rem minmax(0, 1fr);
+  }
+}
+
+.track-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.track-row {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.track-row select {
+  flex: 1;
+  min-width: 0;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.875rem;
+}
+
+.track-row.sliders input {
+  min-width: 0;
+  width: 100%;
+}
+
+.track-name {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0.2rem 0.35rem;
+  font-family: var(--font-face);
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.track-name:hover,
+.track-name:focus {
+  border-color: var(--edge);
+}
+
+.toggle {
+  border: 1px solid var(--edge);
+  background: var(--plate);
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.toggle.on {
+  background: var(--amber);
+  border-color: var(--amber);
+  color: var(--on-accent);
+}
+
+.toggle.rec.on {
+  background: var(--rec);
+  border-color: var(--rec);
+  color: #fff;
+}
+
+.track-row.sliders label {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.btn.small {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8125rem;
+}
+
+.lane {
+  position: relative;
+  min-height: 5.5rem;
+  border-radius: 8px;
+  background: var(--steel);
+  overflow: hidden;
+  cursor: text;
+}
+
+.lane canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--silk);
+  pointer-events: none;
+}
+
+.studio-panel[data-mode='recording'] .playhead {
+  background: var(--rec);
+}
+
+.lane-tag {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.45rem;
+  font-size: 0.75rem;
+  color: var(--tuned);
+  font-weight: 600;
 }

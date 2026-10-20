@@ -2,9 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { normalizeBoard, type BoardState } from './audio/chain';
 import { AudioEngine, type ChannelMode, type LatencyInfo, type RecordSource } from './audio/engine';
 import { LevelMeter } from './components/LevelMeter';
+import { LooperTab } from './components/LooperTab';
 import { Pedalboard } from './components/Pedalboard';
 import { PresetBar } from './components/PresetBar';
 import { Recorder } from './components/Recorder';
+import { Studio } from './components/Studio';
+import { encodeWav } from './audio/wav';
+import { saveRecording, type Recording } from './storage/recordings';
 import { Tuner } from './components/Tuner';
 import {
   deletePreset,
@@ -46,7 +50,9 @@ type Phase = 'idle' | 'starting' | 'running';
 
 const TABS: { value: TabName; label: string }[] = [
   { value: 'audio', label: 'Afinador y audio' },
-  { value: 'board', label: 'Pedalera y grabación' }
+  { value: 'board', label: 'Pedalera y grabación' },
+  { value: 'looper', label: 'Looper y ritmo' },
+  { value: 'studio', label: 'Estudio' }
 ];
 
 function describeError(e: unknown): string {
@@ -85,6 +91,8 @@ export default function App() {
   const [measuring, setMeasuring] = useState(false);
   const [measureMsg, setMeasureMsg] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [studioBusy, setStudioBusy] = useState(false);
+  const [takesVersion, setTakesVersion] = useState(0);
   const [latency, setLatency] = useState<LatencyInfo | null>(null);
   const [board, setBoard] = useState<BoardState>(loadBoard);
   const [presetId, setPresetId] = useState<string>(() => localStorage.getItem(PRESET_KEY) ?? FACTORY_PRESETS[0].id);
@@ -224,6 +232,34 @@ export default function App() {
     } finally {
       setSwitching(false);
     }
+  };
+
+  /** Cargador de IR para un contexto concreto (el re-amp usa su propio contexto fuera de tiempo real). */
+  const irLoaderFor = useCallback(
+    (ctx: BaseAudioContext) => async (id: string) => {
+      const rec = await getIr(id);
+      return rec ? decodeIr(ctx, rec.blob) : null;
+    },
+    []
+  );
+
+  const reampTake = async (rec: Recording): Promise<Recording> => {
+    if (!engine.ctx) throw new Error('audio');
+    const decoded = await engine.ctx.decodeAudioData(await rec.blob.arrayBuffer());
+    const input = Array.from({ length: decoded.numberOfChannels }, (_, c) => decoded.getChannelData(c));
+    const out = await engine.reamp(input, decoded.sampleRate, board, irLoaderFor);
+    const created: Recording = {
+      id: crypto.randomUUID(),
+      name: `${rec.name} (re-amp${currentPreset ? `: ${currentPreset.name}` : ''})`.slice(0, 80),
+      createdAt: Date.now(),
+      duration: out[0].length / decoded.sampleRate,
+      sampleRate: decoded.sampleRate,
+      channels: 2,
+      source: 'wet',
+      blob: encodeWav(out, decoded.sampleRate)
+    };
+    await saveRecording(created);
+    return created;
   };
 
   const autoGate = async () => {
@@ -399,7 +435,10 @@ export default function App() {
             aria-selected={tab === t.value}
             aria-controls={`panel-${t.value}`}
             tabIndex={tab === t.value ? 0 : -1}
-            onClick={() => update({ tab: t.value })}
+            onClick={(e) => {
+              update({ tab: t.value });
+              e.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            }}
             onKeyDown={(e) => {
               if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
               const next = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length];
@@ -408,7 +447,7 @@ export default function App() {
             }}
           >
             {t.label}
-            {t.value === 'board' && recording && (
+            {((t.value === 'board' && recording) || (t.value === 'studio' && studioBusy)) && (
               <span className="tab-rec">
                 <span className="rec-dot" aria-hidden="true" />
                 Grabando
@@ -646,12 +685,35 @@ export default function App() {
 
         <Recorder
           engine={engine}
+          version={takesVersion}
+          onReamp={reampTake}
+          blocked={studioBusy}
           source={settings.recordSource}
           onSource={(s: RecordSource) => {
             update({ recordSource: s });
             engine.setRecordSource(s);
           }}
           onRecordingChange={setRecording}
+        />
+      </div>
+
+      <div className="layout" role="tabpanel" id="panel-looper" aria-labelledby="tab-looper" hidden={tab !== 'looper'}>
+        <LooperTab engine={engine} active={tab === 'looper'} latencyMs={measuredMs ?? totalLatency} />
+      </div>
+
+      <div className="layout" role="tabpanel" id="panel-studio" aria-labelledby="tab-studio" hidden={tab !== 'studio'}>
+        <Studio
+          engine={engine}
+          active={tab === 'studio'}
+          latencyMs={measuredMs ?? totalLatency}
+          busy={recording}
+          onBusy={(on) => {
+            setStudioBusy(on);
+          }}
+          board={board}
+          irLoaderFor={irLoaderFor}
+          onTakeSaved={() => setTakesVersion((v) => v + 1)}
+          theme={settings.theme}
         />
       </div>
     </div>

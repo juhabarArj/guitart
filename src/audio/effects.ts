@@ -186,7 +186,7 @@ export abstract class Effect {
   private disconnectTimer = 0;
   enabled = false;
 
-  constructor(protected ctx: AudioContext, readonly def: EffectDef) {
+  constructor(protected ctx: BaseAudioContext, readonly def: EffectDef) {
     this.input = new GainNode(ctx);
     this.output = new GainNode(ctx);
     this.dry = new GainNode(ctx, { gain: 1 });
@@ -208,8 +208,9 @@ export abstract class Effect {
       this.input.connect(this.coreIn);
       this.coreConnected = true;
     }
-    this.wet.gain.setTargetAtTime(on ? 1 : 0, t, SMOOTH);
-    this.dry.gain.setTargetAtTime(on && !this.def.parallel ? 0 : 1, t, SMOOTH);
+    void t;
+    this.ramp(this.wet.gain, on ? 1 : 0);
+    this.ramp(this.dry.gain, on && !this.def.parallel ? 0 : 1);
     // Un pedal apagado deja de recibir señal para no gastar CPU
     if (!on && this.coreConnected && this.coreIn) {
       const coreIn = this.coreIn;
@@ -222,14 +223,20 @@ export abstract class Effect {
 
   abstract setParam(key: string, value: number): void;
 
+  /** En tiempo real, transición suave; al procesar fuera de tiempo real (re-amp), valor exacto desde el inicio. */
+  protected get offline() {
+    return typeof OfflineAudioContext !== 'undefined' && this.ctx instanceof OfflineAudioContext;
+  }
+
   protected ramp(param: AudioParam, value: number, time = SMOOTH) {
-    param.setTargetAtTime(value, this.ctx.currentTime, time);
+    if (this.offline) param.setValueAtTime(value, 0);
+    else param.setTargetAtTime(value, this.ctx.currentTime, time);
   }
 }
 
 class Gate extends Effect {
   private node: AudioWorkletNode;
-  constructor(ctx: AudioContext) {
+  constructor(ctx: BaseAudioContext) {
     super(ctx, DEF_BY_TYPE.gate);
     this.node = new AudioWorkletNode(ctx, 'gate-processor');
     this.attachCore(this.node, this.node);
@@ -243,7 +250,7 @@ class Gate extends Effect {
 class Compressor extends Effect {
   private comp: AudioWorkletNode;
   private makeup: GainNode;
-  constructor(ctx: AudioContext) {
+  constructor(ctx: BaseAudioContext) {
     super(ctx, DEF_BY_TYPE.comp);
     this.comp = new AudioWorkletNode(ctx, 'comp-processor');
     this.makeup = new GainNode(ctx);
@@ -282,7 +289,7 @@ class Drive extends Effect {
   private tone: BiquadFilterNode;
   private level: GainNode;
   private curves = [0, 1, 2].map(makeCurve);
-  constructor(ctx: AudioContext) {
+  constructor(ctx: BaseAudioContext) {
     super(ctx, DEF_BY_TYPE.drive);
     this.tight = new BiquadFilterNode(ctx, { type: 'highpass', frequency: 90, Q: 0.7 });
     this.pre = new GainNode(ctx);
@@ -358,7 +365,7 @@ class Amp extends Effect {
   private master: GainNode;
   private p: Record<string, number> = { model: 1, gain: 50, master: 5 };
 
-  constructor(ctx: AudioContext) {
+  constructor(ctx: BaseAudioContext) {
     super(ctx, DEF_BY_TYPE.amp);
     this.inHpf = new BiquadFilterNode(ctx, { type: 'highpass', Q: 0.7 });
     this.pre1 = new GainNode(ctx);
@@ -527,10 +534,12 @@ export class Cab extends Effect {
   private userIr: AudioBuffer | null = null;
   private token = 0;
   irLoader: IrLoader | null = null;
+  private pendingIr: Promise<unknown> = Promise.resolve();
+  private pendingBuf: Promise<unknown> = Promise.resolve();
   /** true cuando se ha elegido "IR propia" pero no hay archivo disponible y suena la 4x12 */
   onFallback: ((fallback: boolean) => void) | null = null;
 
-  constructor(ctx: AudioContext) {
+  constructor(ctx: BaseAudioContext) {
     super(ctx, DEF_BY_TYPE.cab);
     this.conv = new ConvolverNode(ctx, { disableNormalization: true });
     this.level = new GainNode(ctx);
@@ -543,7 +552,7 @@ export class Cab extends Effect {
     this.irId = id;
     this.userIr = null;
     if (id && this.irLoader) {
-      this.irLoader(id)
+      this.pendingIr = this.irLoader(id)
         .then((buf) => {
           if (this.irId !== id) return;
           this.userIr = buf ? normalizeIr(this.ctx, buf) : null;
@@ -563,9 +572,15 @@ export class Cab extends Effect {
     }
     const model = this.model === 3 ? 2 : this.model;
     this.onFallback?.(this.model === 3);
-    cabImpulse(this.ctx.sampleRate, model, this.mic).then((buf) => {
+    this.pendingBuf = cabImpulse(this.ctx.sampleRate, model, this.mic).then((buf) => {
       if (token === this.token) this.conv.buffer = buf;
     });
+  }
+
+  /** Se resuelve cuando la respuesta de altavoz actual está cargada (necesario antes de un re-amp). */
+  async whenReady() {
+    await this.pendingIr;
+    await this.pendingBuf;
   }
 
   setParam(key: string, v: number) {
@@ -581,7 +596,7 @@ export class Cab extends Effect {
 
 class Equalizer extends Effect {
   private bands: Record<string, BiquadFilterNode>;
-  constructor(ctx: AudioContext) {
+  constructor(ctx: BaseAudioContext) {
     super(ctx, DEF_BY_TYPE.eq);
     const low = new BiquadFilterNode(ctx, { type: 'lowshelf', frequency: 120 });
     const mid = new BiquadFilterNode(ctx, { type: 'peaking', frequency: 800, Q: 0.8 });
@@ -601,7 +616,7 @@ class Chorus extends Effect {
   private depthL: GainNode;
   private depthR: GainNode;
   private mix: GainNode;
-  constructor(ctx: AudioContext) {
+  constructor(ctx: BaseAudioContext) {
     super(ctx, DEF_BY_TYPE.chorus);
     const split = new GainNode(ctx);
     const dl = new DelayNode(ctx, { maxDelayTime: 0.05, delayTime: 0.012 });
@@ -634,7 +649,7 @@ class Delay extends Effect {
   private feedback: GainNode;
   private filter: BiquadFilterNode;
   private mix: GainNode;
-  constructor(ctx: AudioContext) {
+  constructor(ctx: BaseAudioContext) {
     super(ctx, DEF_BY_TYPE.delay);
     this.delay = new DelayNode(ctx, { maxDelayTime: 2 });
     this.filter = new BiquadFilterNode(ctx, { type: 'lowpass', Q: 0.5 });
@@ -659,7 +674,7 @@ class Reverb extends Effect {
   private mix: GainNode;
   private decay = 0;
   private timer = 0;
-  constructor(ctx: AudioContext) {
+  constructor(ctx: BaseAudioContext) {
     super(ctx, DEF_BY_TYPE.reverb);
     this.convolver = new ConvolverNode(ctx);
     this.filter = new BiquadFilterNode(ctx, { type: 'lowpass', Q: 0.5 });
@@ -687,13 +702,14 @@ class Reverb extends Effect {
   setParam(key: string, v: number) {
     if (key === 'decay' && v !== this.decay) {
       window.clearTimeout(this.timer);
-      this.timer = window.setTimeout(() => this.buildImpulse(v), 150);
+      if (this.offline) this.buildImpulse(v);
+      else this.timer = window.setTimeout(() => this.buildImpulse(v), 150);
     } else if (key === 'tone') this.ramp(this.filter.frequency, toneToHz(v, 1500, 14000));
     else if (key === 'mix') this.ramp(this.mix.gain, pct(v) * 1.5);
   }
 }
 
-export function createEffect(ctx: AudioContext, type: EffectType): Effect {
+export function createEffect(ctx: BaseAudioContext, type: EffectType): Effect {
   switch (type) {
     case 'gate':
       return new Gate(ctx);

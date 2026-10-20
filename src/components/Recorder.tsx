@@ -11,7 +11,8 @@ const clock = (s: number) => {
 
 const dateFmt = new Intl.DateTimeFormat('es-ES', { dateStyle: 'short', timeStyle: 'short' });
 
-function Take({ rec, onDelete }: { rec: Recording; onDelete: () => void }) {
+function Take({ rec, onDelete, onReamp }: { rec: Recording; onDelete: () => void; onReamp?: () => Promise<void> }) {
+  const [working, setWorking] = useState(false);
   const url = useMemo(() => URL.createObjectURL(rec.blob), [rec.blob]);
   useEffect(() => () => URL.revokeObjectURL(url), [url]);
   const mb = rec.blob.size / 1024 / 1024;
@@ -21,7 +22,7 @@ function Take({ rec, onDelete }: { rec: Recording; onDelete: () => void }) {
         <strong>{rec.name}</strong>
         <span>
           {dateFmt.format(rec.createdAt)}, {clock(rec.duration)}, {rec.sampleRate / 1000} kHz{' '}
-          {rec.channels === 1 ? 'mono' : 'estéreo'}, {rec.source === 'wet' ? 'con efectos' : 'en seco'}, {mb.toFixed(1)} MB
+          {rec.channels === 1 ? 'mono' : 'estéreo'}, {rec.source === 'wet' ? 'mezcla' : 'en seco'}, {mb.toFixed(1)} MB
         </span>
       </div>
       <audio controls preload="none" src={url} />
@@ -29,6 +30,23 @@ function Take({ rec, onDelete }: { rec: Recording; onDelete: () => void }) {
         <a className="btn ghost" href={url} download={`${rec.name}.wav`}>
           Descargar WAV
         </a>
+        {onReamp && (rec.source === 'dry' || !rec.source) && (
+          <button
+            className="btn ghost"
+            disabled={working}
+            title="Procesa esta toma en seco con la pedalera actual y crea una toma nueva"
+            onClick={async () => {
+              setWorking(true);
+              try {
+                await onReamp();
+              } finally {
+                setWorking(false);
+              }
+            }}
+          >
+            {working ? 'Procesando…' : 'Re-amp'}
+          </button>
+        )}
         <button className="btn ghost danger" onClick={onDelete}>
           Borrar
         </button>
@@ -39,12 +57,17 @@ function Take({ rec, onDelete }: { rec: Recording; onDelete: () => void }) {
 
 interface RecorderProps {
   engine: AudioEngine;
+  /** Cambia cuando otra parte de la app guarda una toma: recarga la lista */
+  version: number;
+  onReamp: (rec: Recording) => Promise<Recording>;
+  /** Otra sección (el multipista) está usando la grabación */
+  blocked: boolean;
   source: RecordSource;
   onSource: (s: RecordSource) => void;
   onRecordingChange: (on: boolean) => void;
 }
 
-export function Recorder({ engine, source, onSource, onRecordingChange }: RecorderProps) {
+export function Recorder({ engine, version, onReamp, blocked, source, onSource, onRecordingChange }: RecorderProps) {
   const [takes, setTakes] = useState<Recording[]>([]);
   const [recording, setRecording] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -54,7 +77,7 @@ export function Recorder({ engine, source, onSource, onRecordingChange }: Record
 
   useEffect(() => {
     listRecordings().then(setTakes).catch(() => setError('No se pueden leer las grabaciones guardadas en este navegador.'));
-  }, []);
+  }, [version]);
 
   useEffect(() => {
     if (!recording) return;
@@ -112,14 +135,14 @@ export function Recorder({ engine, source, onSource, onRecordingChange }: Record
     <section className="panel recorder" aria-labelledby="rec-title">
       <div className="panel-head">
         <h2 id="rec-title">Grabación</h2>
-        <span className="hint">WAV de 24 bits, sin compresión. En seco guarda la guitarra sin efectos.</span>
+        <span className="hint">WAV de 24 bits. Mezcla graba todo lo que suena (guitarra con efectos, looper y ritmo); En seco, solo la guitarra limpia.</span>
       </div>
 
       <div className="transport">
         <button
           className={`rec-button${recording ? ' is-recording' : ''}`}
           onClick={recording ? stop : start}
-          disabled={saving}
+          disabled={saving || (blocked && !recording)}
           aria-pressed={recording}
         >
           <span className="rec-dot" aria-hidden="true" />
@@ -130,7 +153,7 @@ export function Recorder({ engine, source, onSource, onRecordingChange }: Record
         </span>
         <div className="segmented rec-source" role="group" aria-label="Señal que se graba">
           <button aria-pressed={source === 'wet'} onClick={() => onSource('wet')} disabled={recording || saving}>
-            Con efectos
+            Mezcla
           </button>
           <button aria-pressed={source === 'dry'} onClick={() => onSource('dry')} disabled={recording || saving}>
             En seco
@@ -145,7 +168,15 @@ export function Recorder({ engine, source, onSource, onRecordingChange }: Record
       ) : (
         <ul className="takes">
           {takes.map((t) => (
-            <Take key={t.id} rec={t} onDelete={() => remove(t.id)} />
+            <Take
+              key={t.id}
+              rec={t}
+              onDelete={() => remove(t.id)}
+              onReamp={async () => {
+                const created = await onReamp(t);
+                setTakes((list) => [created, ...list]);
+              }}
+            />
           ))}
         </ul>
       )}

@@ -11,6 +11,7 @@ class CaptureProcessor extends AudioWorkletProcessor {
       if (e.data.cmd === 'start') {
         this.buffers = null;
         this.filled = 0;
+        this.startAt = e.data.at ?? 0; // muestra del contexto en la que empieza (0 = ya)
         this.recording = true;
       } else if (e.data.cmd === 'stop') {
         this.recording = false;
@@ -38,9 +39,11 @@ class CaptureProcessor extends AudioWorkletProcessor {
   process(inputs) {
     const input = inputs[0];
     if (this.recording && input && input.length > 0) {
-      this.ensure(input.length);
       const frames = input[0].length;
-      let read = 0;
+      if (this.startAt > currentFrame + frames) return true;
+      this.ensure(input.length);
+      let read = Math.max(0, this.startAt - currentFrame);
+      this.startAt = 0;
       while (read < frames) {
         const n = Math.min(frames - read, this.blockSize - this.filled);
         for (let ch = 0; ch < input.length; ch++) {

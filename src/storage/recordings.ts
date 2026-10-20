@@ -9,7 +9,7 @@ export interface Recording {
   sampleRate: number;
   channels: number;
   /** 'wet' con efectos, 'dry' en seco. Las tomas de la Fase 1 no lo tienen (eran en seco). */
-  source?: 'wet' | 'dry';
+  source?: 'wet' | 'guitar' | 'dry';
   blob: Blob;
 }
 

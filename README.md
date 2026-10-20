@@ -4,7 +4,25 @@ Estudio de guitarra en el navegador: afinador, simulador de amplificador, pedale
 
 **Demo:** https://juhabararj.github.io/guitart/
 
-## Fase 4 (esta versión, 0.5)
+## Fase 5b (esta versión, 0.7)
+
+- Nueva pestaña «Estudio»: multipista de 4 pistas con grabación sobre las demás, volumen, panorama, silencio y solo, cabezal movible y formas de onda
+- Las tomas se alinean con la latencia medida y empiezan en el instante exacto programado
+- Opción de tocar con el tempo (metrónomo y batería alineados con el proyecto) y cuenta atrás al grabar
+- Re-amp: las pistas y tomas grabadas en seco se procesan con la pedalera actual sin volver a tocar; se puede volver al original
+- Exportar la mezcla a WAV (se guarda también en Grabación). El proyecto se guarda en el navegador
+- Nueva fuente de grabación interna «guitarra con efectos» para que el multipista no grabe el metrónomo ni las otras pistas
+
+## Fase 5a (0.6)
+
+- Nueva pestaña «Looper y ritmo»
+- Looper con estados visibles, guía de uso integrada, capas, deshacer la última capa, parar y borrar. Compensa la latencia medida para que las capas encajen
+- Sincronización con el compás: arranca tras la cuenta atrás y cierra la vuelta en compases enteros (o modo libre)
+- Tempo de 40 a 240 BPM, marcar el tempo pulsando, compases de 2/4 a 7/4 y metrónomo con acento
+- Caja de ritmos con sonidos generados por código, 6 ritmos (rock, pop, funk, balada, shuffle y vals), editor de casillas con golpes fuertes y suaves, y swing
+- La grabación en modo Mezcla incluye looper y ritmo
+
+## Fase 4 (0.5)
 
 - El contexto de audio adopta la frecuencia de muestreo de la interfaz (sin remuestreo); al cambiar de entrada o de modo se reconstruye conservando todo el estado
 - Modo de latencia mínima opcional
@@ -75,6 +93,12 @@ public/worklets/capture-processor.js  Captura PCM en el hilo de audio
 public/worklets/gate-processor.js     Puerta de ruido
 public/worklets/comp-processor.js     Compresor sin latencia añadida
 public/worklets/probe-processor.js    Captura para medir la latencia
+public/worklets/looper-processor.js   Looper con capas y compensación de latencia
+src/audio/transport.ts                 Reloj de tempo: metrónomo y caja de ritmos
+src/audio/drums.ts                     Sonidos de batería y patrones
+src/audio/looper.ts                    Control del looper
+src/audio/studio.ts                    Reproductor y mezcla del multipista
+src/storage/studio.ts                  Proyecto del multipista en IndexedDB
 src/audio/engine.ts                    Grafo de audio (entrada, canal, ganancia, pedalera, monitor, captura)
 src/audio/effects.ts                   Definición y procesado de cada pedal
 src/audio/chain.ts                     Cadena de efectos y estado de la pedalera
@@ -92,6 +116,6 @@ src/components/                        Afinador, medidor y grabadora
 2. ~~Cadena de efectos reordenable y presets~~
 3. ~~Simulador de amplificador y cargador de IR~~
 4. ~~Audio y latencia~~
-5. **Looper y estudio.** Looper en una pestaña propia con guía de uso integrada, metrónomo con cuenta atrás, caja de ritmos, multipista y re-amp (aplicar la pedalera a una toma en seco). Las capas se alinean con la latencia medida
+5. ~~Looper y estudio: looper, metrónomo, caja de ritmos, multipista y re-amp~~
 6. **Control.** MIDI, pedal Bluetooth, atajos de teclado y copia de seguridad completa de presets e IR
 7. **Futuro.** Modelos de amplificador neuronales (NAM) en WASM
