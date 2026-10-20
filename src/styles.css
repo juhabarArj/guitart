@@ -1993,3 +1993,93 @@ input[type='range'] {
   font-size: 0.8125rem;
   line-height: 1.35;
 }
+
+.tab-chord {
+  fill: var(--amber);
+  font-family: var(--font-face);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.inline-check {
+  align-items: center;
+}
+
+.inline-check input {
+  margin-top: 0;
+}
+
+.tab-editor-buttons select {
+  width: auto;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.8125rem;
+}
+
+.chord-list h3 {
+  margin: 0.5rem 0;
+  font-family: var(--font-face);
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.chord-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+
+.chord-card {
+  margin: 0;
+  width: 6.5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  background: var(--plate-2);
+  text-align: center;
+}
+
+.chord-card figcaption strong {
+  display: block;
+  font-family: var(--font-face);
+  font-size: 1.15rem;
+}
+
+.chord-card figcaption span {
+  display: block;
+  font-size: 0.6875rem;
+  color: var(--muted);
+  min-height: 1.6em;
+}
+
+.chord-card svg {
+  width: 100%;
+}
+
+.chord-card .string,
+.chord-card .fret {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+
+.chord-card .nut {
+  stroke: var(--silk);
+  stroke-width: 3;
+}
+
+.chord-card .dot {
+  fill: var(--amber);
+}
+
+.chord-card .open {
+  fill: none;
+  stroke: var(--silk);
+  stroke-width: 1.2;
+}
+
+.chord-card .mark,
+.chord-card .base {
+  fill: var(--muted);
+  font-size: 9px;
+  text-anchor: middle;
+}

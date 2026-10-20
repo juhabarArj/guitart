@@ -4,7 +4,15 @@ Estudio de guitarra en el navegador: afinador, simulador de amplificador, pedale
 
 **Demo:** https://juhabararj.github.io/guitart/
 
-## Tablatura, etapas 1 y 2 (esta versión, 1.1)
+## Tablatura, etapas 4, 5 y 6 (esta versión, 1.2)
+
+- Técnicas en la detección de notas sueltas, siguiendo la curva de tono: hammer-on (h), pull-off (p), slides (/ y \\), bends (7b9) y vibrato (~). Los ataques de púa se distinguen de los ligados por la subida de energía
+- Edición de técnicas en el editor y reproducción con ellas (bend, vibrato, slide)
+- Acordes nota a nota con el modelo de IA Basic Pitch (Spotify, Apache 2.0): modo «Acordes y notas (IA)». TensorFlow.js y el modelo se cargan solo al usarlo y quedan guardados para la siguiente vez
+- Digitación de acordes: cuerdas distintas y al alcance de la mano, descartando notas que no caben (armónicos)
+- Reconocimiento de acordes por nombre (mayor, menor, 7, maj7, m7, sus2, sus4, dim, aug y power chords), mostrados sobre la tablatura y en el texto, con diagramas en afinación estándar
+
+## Tablatura, etapas 1 y 2 (1.1)
 
 - Nueva pestaña «Tablatura». Botón «Pasar a TAB» en las tomas de Grabación y en las pistas del Estudio
 - Transcripción de notas sueltas: ataques por flujo espectral, tono por YIN, división de ligados, tempo estimado o el del metrónomo, cuantización a semicorcheas y digitación con el menor desplazamiento de la mano (Viterbi). Respeta la afinación elegida
@@ -138,5 +146,10 @@ src/components/                        Afinador, medidor y grabadora
 4. ~~Audio y latencia~~
 5. ~~Looper y estudio: looper, metrónomo, caja de ritmos, multipista y re-amp~~
 6. ~~Control: MIDI, pedal Bluetooth, atajos de teclado y copia de seguridad~~
-7. **Tablatura.** ~~Etapas 1 y 2: notas sueltas a TAB, vista y editor~~. Pendiente: 3 exportar a MusicXML y guardar tablaturas; 4 acordes por nombre; 5 acordes nota a nota (IA); 6 técnicas (bends, slides, ligados)
+7. **Tablatura.** ~~Etapas 1, 2, 4, 5 y 6~~. Pendiente: etapa 3, exportar a MusicXML y guardar varias tablaturas
 8. **Futuro.** Reproductor de canciones para practicar, presets por enlace, modelos de amplificador neuronales (NAM) en WASM y conservar el bucle del looper al reconstruir el motor
+
+## Componentes de terceros
+
+- [Basic Pitch](https://github.com/spotify/basic-pitch-ts) (Spotify), licencia Apache 2.0. El modelo está en `public/models/basic-pitch/` junto a su licencia.
+- [TensorFlow.js](https://github.com/tensorflow/tfjs), licencia Apache 2.0.

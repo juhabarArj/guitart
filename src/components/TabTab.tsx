@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AudioEngine } from '../audio/engine';
 import { midiName, TUNINGS } from '../audio/pitch';
 import { listRecordings, type Recording } from '../storage/recordings';
-import { toAscii } from '../tab/ascii';
+import { noteLabel, toAscii } from '../tab/ascii';
+import { chordShape, detectChords } from '../tab/chords';
 import { MAX_FRET, quantize, type TabNote } from '../tab/fingering';
+import { transcribePoly } from '../tab/poly';
 import { playNote } from '../tab/synth';
-import { DEFAULT_TRANSCRIBE, estimateBpm, toMono, transcribe, type RawNote } from '../tab/transcribe';
+import { DEFAULT_TRANSCRIBE, estimateBpm, toMono, transcribe, type Legato, type RawNote, type Technique } from '../tab/transcribe';
 
 export interface TabRequest {
   n: number;
@@ -24,6 +26,9 @@ interface TabDoc {
   /** 'first': la primera nota cae en el tiempo 1 · 'start': la grabación empieza en el tiempo 1 */
   offsetMode: 'first' | 'start';
   sensitivity: number;
+  /** mono: notas sueltas (rápido) · poly: acordes y notas con el modelo de IA */
+  mode?: 'mono' | 'poly';
+  showChords?: boolean;
   raw: RawNote[];
   notes: TabNote[];
   edited: boolean;
@@ -33,7 +38,7 @@ const KEY = 'guitart:tab';
 const STEP_W = 22;
 const LINE_H = 16;
 const PAD = 10;
-const TOP = 20;
+const TOP = 30;
 
 function loadDoc(): TabDoc | null {
   try {
@@ -79,7 +84,7 @@ export function TabTab({ engine, active, request, defaultTuning, a4 }: Props) {
   const requantize = (d: TabDoc): TabDoc => {
     const t = TUNINGS.find((x) => x.id === d.tuningId) ?? TUNINGS[0];
     const offset = d.offsetMode === 'first' && d.raw.length ? d.raw[0].t : 0;
-    return { ...d, notes: quantize(d.raw, d.bpm, offset, t.midi), edited: false };
+    return { ...d, notes: quantize(d.raw, d.bpm, offset, t.midi, d.mode === 'poly'), edited: false };
   };
 
   const analyze = async (title: string, channels: Float32Array[], sr: number, dry: boolean, base?: Partial<TabDoc>) => {
@@ -96,9 +101,25 @@ export function TabTab({ engine, active, request, defaultTuning, a4 }: Props) {
     }
     audio.current = { mono, buffer, sr };
     const sensitivity = base?.sensitivity ?? doc?.sensitivity ?? 0.5;
-    const raw = await transcribe(mono, sr, { ...DEFAULT_TRANSCRIBE, sensitivity, a4 }, (p) =>
-      setStatus(`Analizando la grabación… ${Math.round(p * 100)} %`)
-    );
+    const mode = base?.mode ?? doc?.mode ?? 'mono';
+    let raw: RawNote[];
+    try {
+      raw =
+        mode === 'poly'
+          ? await transcribePoly(mono, sr, sensitivity, (p) =>
+              setStatus(
+                p === 0
+                  ? 'Cargando el modelo de IA (solo la primera vez tarda más)…'
+                  : `Analizando acordes y notas… ${Math.round(p * 100)} %`
+              )
+            )
+          : await transcribe(mono, sr, { ...DEFAULT_TRANSCRIBE, sensitivity, a4 }, (p) =>
+              setStatus(`Analizando la grabación… ${Math.round(p * 100)} %`)
+            );
+    } catch {
+      setStatus('No se ha podido cargar el modelo de IA. Comprueba la conexión (la primera vez se descarga) y vuelve a probar.');
+      return;
+    }
     const detectedBpm = estimateBpm(raw);
     const next = requantize({
       title,
@@ -108,6 +129,8 @@ export function TabTab({ engine, active, request, defaultTuning, a4 }: Props) {
       tuningId: base?.tuningId ?? doc?.tuningId ?? defaultTuning,
       offsetMode: base?.offsetMode ?? 'first',
       sensitivity,
+      mode,
+      showChords: base?.showChords ?? mode === 'poly',
       raw,
       notes: [],
       edited: false
@@ -145,9 +168,21 @@ export function TabTab({ engine, active, request, defaultTuning, a4 }: Props) {
 
   const sel = doc?.notes.find((n) => n.id === selected) ?? null;
 
-  const preview = (midi: number) => {
+  const prevOnString = (n: TabNote) =>
+    doc?.notes.filter((m) => m.string === n.string && m.step < n.step).pop()?.midi;
+
+  const preview = (midi: number, n?: TabNote) => {
     const ctx = engine.ctx;
-    if (ctx) playNote(ctx, ctx.destination, midi, ctx.currentTime + 0.01, 0.6);
+    if (ctx) playNote(ctx, ctx.destination, midi, ctx.currentTime + 0.01, 0.6, n?.tech, n ? prevOnString(n) : undefined);
+  };
+
+  const setTech = (patch: Partial<Technique>) => {
+    if (!sel) return;
+    const tech: Technique = { ...sel.tech, ...patch };
+    (Object.keys(tech) as (keyof Technique)[]).forEach((k) => tech[k] === undefined && delete tech[k]);
+    const next = { ...sel, tech: Object.keys(tech).length ? tech : undefined };
+    editNotes((ns) => ns.map((n) => (n.id === sel.id ? next : n)));
+    preview(next.midi, next);
   };
 
   const updateSel = (patch: Partial<TabNote>, listen = false) => {
@@ -257,7 +292,9 @@ export function TabTab({ engine, active, request, defaultTuning, a4 }: Props) {
       src.start(at, Math.max(0, offset + startStep * sd));
       srcs.push(src);
     } else {
-      for (const n of doc.notes) if (n.step >= startStep) srcs.push(playNote(ctx, ctx.destination, n.midi, at + (n.step - startStep) * sd, n.dur * sd));
+      for (const n of doc.notes)
+        if (n.step >= startStep)
+          srcs.push(playNote(ctx, ctx.destination, n.midi, at + (n.step - startStep) * sd, n.dur * sd, n.tech, prevOnString(n)));
     }
     play.current = { startCtx: at, startStep, sd, srcs };
     setPlaying(mode);
@@ -290,6 +327,16 @@ export function TabTab({ engine, active, request, defaultTuning, a4 }: Props) {
     return () => cancelAnimationFrame(raf);
   });
 
+  const chords = useMemo(
+    () => (doc?.showChords ? detectChords(doc.notes, doc.beatsPerBar, tuning.flats) : []),
+    [doc, tuning]
+  );
+  const uniqueChords = useMemo(() => {
+    const seen = new Map<string, (typeof chords)[number]>();
+    chords.forEach((c) => seen.set(c.name, c));
+    return [...seen.values()];
+  }, [chords]);
+
   const ascii = useMemo(
     () =>
       doc
@@ -299,10 +346,11 @@ export function TabTab({ engine, active, request, defaultTuning, a4 }: Props) {
             beatsPerBar: doc.beatsPerBar,
             bpm: doc.bpm,
             title: doc.title,
-            tuningName: tuning.name
+            tuningName: tuning.name,
+            chords
           })
         : '',
-    [doc, tuning]
+    [doc, tuning, chords]
   );
 
   const clickBar = (e: React.MouseEvent<SVGSVGElement>, bar: number) => {
@@ -414,6 +462,21 @@ export function TabTab({ engine, active, request, defaultTuning, a4 }: Props) {
                 </select>
               </label>
               <label className="field">
+                <span>Detección</span>
+                <select
+                  value={doc.mode ?? 'mono'}
+                  onChange={(e) => {
+                    const mode = e.target.value as 'mono' | 'poly';
+                    if (!audio.current) return setDoc({ ...doc, mode });
+                    if (doc.edited && !window.confirm('Volver a analizar descarta tus correcciones. ¿Continuar?')) return;
+                    analyze(doc.title, [audio.current.mono], audio.current.sr, !warnWet, { ...doc, mode, showChords: mode === 'poly' || doc.showChords });
+                  }}
+                >
+                  <option value="mono">Notas sueltas (rápido)</option>
+                  <option value="poly">Acordes y notas (IA)</option>
+                </select>
+              </label>
+              <label className="field">
                 <span>Inicio del compás 1</span>
                 <select value={doc.offsetMode} onChange={(e) => change({ offsetMode: e.target.value as TabDoc['offsetMode'] })}>
                   <option value="first">En la primera nota</option>
@@ -464,6 +527,10 @@ export function TabTab({ engine, active, request, defaultTuning, a4 }: Props) {
                   </button>
                 </>
               )}
+              <label className="check inline-check">
+                <input type="checkbox" checked={!!doc.showChords} onChange={(e) => setDoc({ ...doc, showChords: e.target.checked })} />
+                <span>Mostrar acordes</span>
+              </label>
               <span className="hint">
                 {doc.notes.length} notas{sel ? ' · se reproduce desde la nota elegida' : ''}
                 {doc.edited ? ' · con correcciones' : ''}
@@ -480,9 +547,17 @@ export function TabTab({ engine, active, request, defaultTuning, a4 }: Props) {
                   role="img"
                   aria-label={`Compás ${b + 1}`}
                 >
-                  <text x={2} y={11} className="tab-barnum">
+                  <text x={2} y={TOP + 5 * LINE_H + 12} className="tab-barnum">
                     {b + 1}
                   </text>
+                  {chords
+                    .filter((c) => c.step >= b * perBar && c.step < (b + 1) * perBar)
+                    .map((c) => (
+                      <text key={c.step} x={PAD + (c.step - b * perBar) * STEP_W} y={11} className="tab-chord">
+                        <title>{c.latin}</title>
+                        {c.name}
+                      </text>
+                    ))}
                   {Array.from({ length: perBar / 4 }, (_, k) => (
                     <line key={k} x1={PAD + k * 4 * STEP_W} x2={PAD + k * 4 * STEP_W} y1={TOP - 7} y2={TOP - 3} className="tab-beat" />
                   ))}
@@ -503,11 +578,11 @@ export function TabTab({ engine, active, request, defaultTuning, a4 }: Props) {
                       const x = PAD + (n.step - b * perBar) * STEP_W + STEP_W / 2;
                       const y = TOP + (5 - n.string) * LINE_H;
                       const end = Math.min(PAD + perBar * STEP_W, x + (n.dur - 0.5) * STEP_W);
-                      const label = String(n.fret);
+                      const label = noteLabel(n);
                       return (
                         <g key={n.id} className={`tab-note${n.id === selected ? ' selected' : ''}`}>
                           <line x1={x} x2={end} y1={y} y2={y} className="tab-dur" />
-                          <rect x={x - (label.length * 4 + 4)} y={y - 7} width={label.length * 8 + 8} height={14} rx={3} />
+                          <rect x={x - (label.length * 3.6 + 4)} y={y - 7} width={label.length * 7.2 + 8} height={14} rx={3} />
                           <text x={x} y={y + 4}>
                             {label}
                           </text>
@@ -557,7 +632,38 @@ export function TabTab({ engine, active, request, defaultTuning, a4 }: Props) {
                       <button className="btn small" onClick={() => updateSel({ step: sel.step - 1 })}>←</button>
                       <button className="btn small" onClick={() => updateSel({ step: sel.step + 1 })}>→</button>
                     </span>
-                    <button className="btn small" onClick={() => preview(sel.midi)}>Oír</button>
+                    <span className="group">
+                      Técnica
+                      <select
+                        value={sel.tech?.from ?? ''}
+                        onChange={(e) => setTech({ from: (e.target.value || undefined) as Legato | undefined })}
+                        aria-label="Cómo se llega a esta nota"
+                      >
+                        <option value="">Con púa</option>
+                        <option value="h">Hammer-on (h)</option>
+                        <option value="p">Pull-off (p)</option>
+                        <option value="/">Slide subiendo (/)</option>
+                        <option value={'\\'}>Slide bajando ({'\\'})</option>
+                      </select>
+                      <select
+                        value={sel.tech?.bend ?? 0}
+                        onChange={(e) => setTech({ bend: Number(e.target.value) || undefined })}
+                        aria-label="Bend"
+                      >
+                        <option value={0}>Sin bend</option>
+                        <option value={1}>Bend ½ tono</option>
+                        <option value={2}>Bend 1 tono</option>
+                        <option value={3}>Bend 1½ tonos</option>
+                      </select>
+                      <button
+                        className={`toggle${sel.tech?.vib ? ' on' : ''}`}
+                        aria-pressed={!!sel.tech?.vib}
+                        onClick={() => setTech({ vib: sel.tech?.vib ? undefined : true })}
+                      >
+                        Vibrato
+                      </button>
+                    </span>
+                    <button className="btn small" onClick={() => preview(sel.midi, sel)}>Oír</button>
                     <button className="btn small ghost danger" onClick={remove}>Borrar</button>
                   </div>
                 </>
@@ -569,6 +675,18 @@ export function TabTab({ engine, active, request, defaultTuning, a4 }: Props) {
                 </p>
               )}
             </div>
+
+            {uniqueChords.length > 0 && (
+              <div className="chord-list">
+                <h3>Acordes</h3>
+                <div className="chord-cards">
+                  {uniqueChords.map((c) => (
+                    <ChordCard key={c.name} name={c.name} latin={c.latin} shape={tuning.id === 'standard' ? chordShape(c.root, c.quality) : null} />
+                  ))}
+                </div>
+                {tuning.id !== 'standard' && <p className="hint">Los diagramas solo se muestran en afinación estándar.</p>}
+              </div>
+            )}
 
             <details className="help">
               <summary>Tablatura en texto</summary>
@@ -605,7 +723,10 @@ export function TabTab({ engine, active, request, defaultTuning, a4 }: Props) {
               Si la primera nota no cae en el tiempo 1, cambia «Inicio del compás 1».
             </li>
             <li>
-              <strong>Notas sueltas</strong>: riffs, melodías y solos. Los acordes todavía no se reconocen.
+              <strong>Detección:</strong> «Notas sueltas» es rápida y muy fiable para riffs, melodías y solos, y reconoce
+              hammer-ons, pull-offs, slides, bends y vibratos. «Acordes y notas (IA)» usa un modelo de inteligencia
+              artificial para sacar también los acordes cuerda a cuerda; la primera vez descarga unos megas y en móviles
+              modestos tarda más.
             </li>
             <li>
               Revisa el resultado con <strong>Oír la tablatura</strong> y corrige lo que no cuadre. Si salen notas de más
@@ -613,11 +734,61 @@ export function TabTab({ engine, active, request, defaultTuning, a4 }: Props) {
             </li>
           </ol>
           <p>
+            Notación de técnicas: h (hammer-on), p (pull-off), / y {'\\'} (slides), 7b9 (bend desde el traste 7 hasta el sonido
+            del 9) y ~ (vibrato). Los nombres de acorde se calculan a partir de las notas de cada medio compás.
+          </p>
+          <p>
             La cuerda y el traste se eligen buscando la digitación que menos mueve la mano. Si tocaste en otra posición,
             usa «Misma nota en otra cuerda».
           </p>
         </details>
       </section>
     </div>
+  );
+}
+
+/** Diagrama de acorde: 6 cuerdas, 4 trastes, puntos, cuerdas al aire (o) y sin tocar (x). */
+function ChordCard({ name, latin, shape }: { name: string; latin: string; shape: number[] | null }) {
+  const fretted = shape?.filter((f) => f > 0) ?? [];
+  const base = fretted.length && Math.max(...fretted) > 4 ? Math.min(...fretted) : 1;
+  const W = 70;
+  const H = 86;
+  const x = (s: number) => 10 + s * 10;
+  const y = (f: number) => 18 + (f - base + 0.5) * 15;
+  return (
+    <figure className="chord-card" title={latin}>
+      <figcaption>
+        <strong>{name}</strong>
+        <span>{latin}</span>
+      </figcaption>
+      {shape ? (
+        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Diagrama de ${latin}`}>
+          {[0, 1, 2, 3, 4].map((k) => (
+            <line key={k} x1={10} x2={60} y1={18 + k * 15} y2={18 + k * 15} className={k === 0 && base === 1 ? 'nut' : 'fret'} />
+          ))}
+          {[0, 1, 2, 3, 4, 5].map((s) => (
+            <line key={s} x1={x(s)} x2={x(s)} y1={18} y2={78} className="string" />
+          ))}
+          {base > 1 && (
+            <text x={64} y={y(base) + 3} className="base">
+              {base}
+            </text>
+          )}
+          {shape.map((f, s) =>
+            f < 0 ? (
+              <text key={s} x={x(s)} y={13} className="mark">
+                ×
+              </text>
+            ) : f === 0 ? (
+              <circle key={s} cx={x(s)} cy={10} r={3} className="open" />
+            ) : (
+              <circle key={s} cx={x(s)} cy={y(f)} r={4} className="dot" />
+            )
+          )}
+        </svg>
+      ) : (
+        <p className="hint">Sin diagrama</p>
+      )}
+    </figure>
   );
 }

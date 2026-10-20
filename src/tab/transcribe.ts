@@ -1,7 +1,17 @@
 // Transcripción monofónica: ataques (flujo espectral) + tono (YIN) → notas con tiempo, duración y altura.
 import { detectPitch } from '../audio/pitch';
 
-export interface RawNote {
+/** Cómo se llega a la nota sin púa desde la anterior: hammer-on, pull-off, slide arriba o abajo */
+export type Legato = 'h' | 'p' | '/' | '\\';
+
+export interface Technique {
+  from?: Legato;
+  /** Bend en semitonos (1 = medio tono, 2 = un tono) */
+  bend?: number;
+  vib?: boolean;
+}
+
+export interface RawNote extends Technique {
   /** Inicio y final en segundos */
   t: number;
   end: number;
@@ -137,85 +147,175 @@ export async function transcribe(
     if (peak && loud && (!onsets.length || f - onsets[onsets.length - 1] >= minGap)) onsets.push(f);
   }
 
-  // 3. Tono de cada nota, y división si el tono cambia sin nuevo ataque (ligados)
-  const notes: RawNote[] = [];
+  // 3. Solo cuentan como púa los ataques en los que sube la energía (un hammer-on o un slide no la suben)
+  const attacks: number[] = [];
+  const onsetTimes = onsets.map((f) => Math.max(0, (f * HOP + HOP) / sr));
+  for (const f of onsets) {
+    const before = Math.max(1e-6, rms[Math.max(0, f - 3)]);
+    let after = 0;
+    for (let k = f; k < Math.min(frames, f + 4); k++) after = Math.max(after, rms[k]);
+    if (after / before >= 1.3) attacks.push(Math.max(0, (f * HOP + N / 2 - (N / 2 - HOP)) / sr));
+  }
+
+  // 4. Curva de tono continua (una lectura cada 20 ms)
   const toMidi = (hz: number) => 69 + 12 * Math.log2(hz / opts.a4);
   const pitchWin = 2048;
   const pitchHop = Math.round(0.02 * sr);
-  const frameT = (f: number) => (f * HOP + N / 2) / sr;
-
-  for (let i = 0; i < onsets.length; i++) {
-    const f0 = onsets[i];
-    const fNext = i + 1 < onsets.length ? onsets[i + 1] : frames;
-    let peakRms = 0;
-    let fEnd = fNext;
-    for (let f = f0; f < fNext; f++) {
-      peakRms = Math.max(peakRms, rms[f]);
-      if (f > f0 + 4 && rms[f] < peakRms * 0.12) {
-        fEnd = f;
-        break;
-      }
-    }
-    const start = Math.max(0, frameT(f0) - (N / 2 - HOP) / sr);
-    const end = frameT(fEnd);
-    const samples: { t: number; m: number }[] = [];
-    for (let s = Math.round((start + 0.03) * sr); s + pitchWin < Math.min(x.length, end * sr); s += pitchHop) {
-      const hz = detectPitch(x.subarray(s, s + pitchWin), sr);
-      if (hz) samples.push({ t: s / sr, m: toMidi(hz) });
-    }
-    // Agrupa tramos de tono estable
-    let segStart = start;
-    let group: number[] = [];
-    const flush = (segEnd: number) => {
-      if (group.length < 2) return;
-      const sorted = [...group].sort((a, b) => a - b);
-      const med = sorted[sorted.length >> 1];
-      const midi = Math.round(med);
-      if (midi < opts.minMidi || midi > opts.maxMidi || segEnd - segStart < 0.04) return;
-      notes.push({ t: segStart, end: segEnd, midi, cents: Math.round((med - midi) * 100) });
-    };
-    for (let k = 0; k < samples.length; k++) {
-      const cur = Math.round(samples[k].m);
-      const ref = group.length ? Math.round([...group].sort((a, b) => a - b)[group.length >> 1]) : cur;
-      // Cambio estable de nota (3 lecturas seguidas): nueva nota sin ataque
-      if (
-        group.length >= 3 &&
-        cur !== ref &&
-        k + 2 < samples.length &&
-        Math.round(samples[k + 1].m) === cur &&
-        Math.round(samples[k + 2].m) === cur
-      ) {
-        flush(samples[k].t);
-        segStart = samples[k].t;
-        group = [];
-      }
-      if (cur === ref || !group.length || Math.abs(samples[k].m - ref) < 0.6) group.push(samples[k].m);
-    }
-    flush(end);
-    if (i % 20 === 0) {
-      onProgress?.(0.5 + 0.5 * (i / Math.max(1, onsets.length)));
+  const gate = maxRms * 0.03;
+  const track: { t: number; m: number | null }[] = [];
+  for (let s = 0, n = 0; s + pitchWin < x.length; s += pitchHop, n++) {
+    const f = Math.min(frames - 1, Math.floor((s + pitchWin / 2) / HOP));
+    const hz = rms[f] > gate ? detectPitch(x.subarray(s, s + pitchWin), sr) : null;
+    track.push({ t: (s + pitchWin / 2) / sr, m: hz ? toMidi(hz) : null });
+    if (n % 150 === 0) {
+      onProgress?.(0.5 + 0.45 * (s / x.length));
       await yieldToUi();
     }
   }
+
+  // 5. Tramos de tono estable; un ataque de púa o un salto de tono empieza tramo nuevo
+  interface Region {
+    start: number;
+    attackAt: number | null;
+    values: number[];
+    lastT: number;
+  }
+  const median = (v: number[]) => [...v].sort((p, q) => p - q)[v.length >> 1];
+  const regions: (Region | null)[] = []; // null = silencio
+  let cur: Region | null = null;
+  let ai = 0;
+  for (const smp of track) {
+    let attackAt: number | null = null;
+    while (ai < attacks.length && attacks[ai] <= smp.t - 0.02) attackAt = attacks[ai++];
+    if (smp.m == null) {
+      if (cur) regions.push(cur, null);
+      cur = null;
+      continue;
+    }
+    const breakHere = attackAt != null || !cur || Math.abs(smp.m - median(cur.values)) >= 0.6;
+    if (breakHere) {
+      if (cur) regions.push(cur);
+      // Sin púa clara, el inicio se ajusta al ataque espectral más cercano (si lo hay) y no a la lectura de tono
+      const near = onsetTimes.filter((t) => t <= smp.t && t >= smp.t - 0.06).pop();
+      cur = { start: attackAt ?? near ?? smp.t - 0.023, attackAt, values: [], lastT: smp.t };
+    }
+    cur!.values.push(smp.m);
+    cur!.lastT = smp.t;
+  }
+  if (cur) regions.push(cur);
+
+  // 6. Notas: tramos largos (o con púa); entre ellos se clasifica la transición
+  const notes: RawNote[] = [];
+  let trans: number[] = [];
+  let prevLast: { t: number; m: number } | null = null;
+  for (const r of regions) {
+    if (!r) {
+      trans = [];
+      prevLast = null;
+      continue;
+    }
+    // Un tramo que sube o baja de forma continua (parte de un bend o de un slide) no es una nota
+    const v = r.values;
+    const ds = v.slice(1).map((x, i) => x - v[i]);
+    const drifting =
+      v.length >= 3 &&
+      Math.max(...v) - Math.min(...v) >= 0.45 &&
+      Math.max(ds.filter((d) => d > 0.02).length, ds.filter((d) => d < -0.02).length) / ds.length >= 0.8;
+    const long = !drifting && (v.length >= 5 || (r.attackAt != null && v.length >= 3));
+    if (!long) {
+      if (r.attackAt != null) trans = [];
+      trans.push(...r.values);
+      continue;
+    }
+    const med = median(r.values);
+    const midi = Math.round(med);
+    const prev = notes[notes.length - 1];
+    const legato = r.attackAt == null && prev && prevLast && r.start - prevLast.t < 0.15;
+    if (legato && prev) {
+      const seq = [prevLast!.m, ...trans, r.values[0]];
+      const deltas = seq.slice(1).map((v, i) => v - seq[i]);
+      const smooth =
+        deltas.length >= 3 && deltas.filter((d) => Math.abs(d) > 0.04 && Math.abs(d) < 0.45).length / deltas.length >= 0.6;
+      const base = prev.midi;
+      const interval = midi - base;
+      // Bend (subida continua de 1 a 3 semitonos), mantenerlo o soltarlo: sigue siendo la misma nota
+      if ((smooth && interval >= 1 && interval <= 3) || (prev.bend && (interval === prev.bend || interval === 0))) {
+        if (interval > 0) prev.bend = Math.max(prev.bend ?? 0, interval);
+        prev.end = r.lastT + 0.01;
+        prevLast = { t: r.lastT, m: r.values[r.values.length - 1] };
+        trans = [];
+        continue;
+      }
+      const stepInt = midi - Math.round(prevLast!.m);
+      // Slide: pasa por trastes intermedios (al menos dos lecturas en medio); si no, es un ligado
+      const between = trans.filter((x) => {
+        const k = Math.round(x);
+        return (k - Math.round(prevLast!.m)) * (k - midi) < 0;
+      }).length;
+      const from: Legato =
+        Math.abs(stepInt) >= 2 && ((between >= 1 && trans.length >= 2) || smooth)
+          ? stepInt > 0
+            ? '/'
+            : '\\'
+          : stepInt > 0
+            ? 'h'
+            : 'p';
+      prev.end = Math.min(prev.end, r.start);
+      notes.push(makeNote(r, med, midi, from));
+    } else notes.push(makeNote(r, med, midi));
+    prevLast = { t: r.lastT, m: r.values[r.values.length - 1] };
+    trans = [];
+  }
+
+  function makeNote(r: Region, med: number, midi: number, from?: Legato): RawNote {
+    // Vibrato: el tono oscila alrededor de la nota varias veces
+    // (se ignoran las dos primeras lecturas, que recogen el ataque, y las desviaciones mínimas)
+    const body = r.values.slice(2);
+    let crossings = 0;
+    let dev = 0;
+    let side = 0;
+    for (const v of body) {
+      dev += (v - med) ** 2;
+      const s = v - med > 0.06 ? 1 : v - med < -0.06 ? -1 : 0;
+      if (s && side && s !== side) crossings++;
+      if (s) side = s;
+    }
+    const vib = body.length >= 8 && Math.sqrt(dev / body.length) > 0.12 && crossings >= 4;
+    return {
+      t: r.start,
+      end: r.lastT + 0.01,
+      midi,
+      cents: Math.round((med - midi) * 100),
+      ...(from ? { from } : {}),
+      ...(vib ? { vib } : {})
+    };
+  }
+
+  const inRange = notes.filter((n) => n.midi >= opts.minMidi && n.midi <= opts.maxMidi && n.end - n.t >= 0.04);
+  notes.length = 0;
+  notes.push(...inRange);
   onProgress?.(1);
   return notes;
 }
 
 /** Estima el tempo buscando la rejilla de corcheas que mejor encaja con los ataques. */
 export function estimateBpm(notes: RawNote[]): number {
-  if (notes.length < 4) return 100;
-  const t0 = notes[0].t;
+  // Las notas de un mismo rasgueo (separadas unos milisegundos) cuentan como un solo ataque
+  const times: number[] = [];
+  for (const n of [...notes].sort((a, b) => a.t - b.t)) if (!times.length || n.t - times[times.length - 1] > 0.05) times.push(n.t);
+  if (times.length < 4) return 100;
+  const t0 = times[0];
   let best = 100;
   let bestScore = Infinity;
   for (let bpm = 60; bpm <= 180; bpm += 0.5) {
     const sd = 60 / bpm / 2;
     let err = 0;
-    for (const n of notes) {
-      const q = (n.t - t0) / sd;
+    for (const t of times) {
+      const q = (t - t0) / sd;
       err += Math.abs(q - Math.round(q));
     }
     // Ligera preferencia por tempos medios para evitar el doble o la mitad
-    const score = err / notes.length + Math.abs(bpm - 110) / 4000;
+    const score = err / times.length + Math.abs(bpm - 110) / 4000;
     if (score < bestScore) {
       bestScore = score;
       best = bpm;
