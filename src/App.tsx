@@ -81,6 +81,10 @@ export default function App() {
   const [channelCount, setChannelCount] = useState<number>(2);
   const [monitorOn, setMonitorOn] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [tunerMute, setTunerMute] = useState(false);
+  const [measuring, setMeasuring] = useState(false);
+  const [measureMsg, setMeasureMsg] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
   const [latency, setLatency] = useState<LatencyInfo | null>(null);
   const [board, setBoard] = useState<BoardState>(loadBoard);
   const [presetId, setPresetId] = useState<string>(() => localStorage.getItem(PRESET_KEY) ?? FACTORY_PRESETS[0].id);
@@ -95,12 +99,15 @@ export default function App() {
 
   const loadIr = useCallback(
     async (id: string) => {
-      const cached = irCache.current.get(id);
+      if (!engine.ctx) return null;
+      // La IR se decodifica a la frecuencia del contexto, que puede cambiar al cambiar de interfaz
+      const key = `${id}@${engine.ctx.sampleRate}`;
+      const cached = irCache.current.get(key);
       if (cached) return cached;
       const rec = await getIr(id);
       if (!rec || !engine.ctx) return null;
       const buf = await decodeIr(engine.ctx, rec.blob);
-      irCache.current.set(id, buf);
+      irCache.current.set(key, buf);
       return buf;
     },
     [engine]
@@ -135,7 +142,7 @@ export default function App() {
     const ir = irs.find((i) => i.id === id);
     if (!window.confirm(`¿Borrar la IR «${ir?.name ?? ''}» de este navegador?`)) return;
     await deleteIr(id);
-    irCache.current.delete(id);
+    for (const key of irCache.current.keys()) if (key.startsWith(`${id}@`)) irCache.current.delete(key);
     setIrs(await listIrs());
     setBoard((b) => b.map((p) => (p.type === 'cab' && p.ir === id ? { ...p, ir: undefined } : p)));
   };
@@ -150,8 +157,83 @@ export default function App() {
   }, [board, presetId]);
 
   useEffect(() => {
-    if (phase === 'running') engine.chain?.apply(board);
+    if (phase === 'running') engine.applyBoard(board);
   }, [engine, phase, board]);
+
+  // Pantalla siempre encendida mientras el audio está activo
+  useEffect(() => {
+    if (phase !== 'running' || !settings.wakeLock || !('wakeLock' in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    let disposed = false;
+    const request = async () => {
+      try {
+        const l = await navigator.wakeLock.request('screen');
+        if (disposed) l.release();
+        else lock = l;
+      } catch {
+        /* el sistema puede denegarlo (batería baja, etc.) */
+      }
+    };
+    request();
+    const onVisible = () => document.visibilityState === 'visible' && request();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      disposed = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      lock?.release().catch(() => undefined);
+    };
+  }, [phase, settings.wakeLock]);
+
+  // Android suspende el audio en segundo plano: al volver a la app se reanuda
+  useEffect(() => {
+    if (phase !== 'running') return;
+    const onVisible = () => document.visibilityState === 'visible' && engine.resume();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [phase, engine]);
+
+  useEffect(() => engine.setTunerMute(tunerMute), [engine, tunerMute]);
+
+  const latencyKey = `${settings.inputId}|${settings.outputId}|${settings.lowLatency ? 'min' : 'normal'}`;
+  const measuredMs = settings.measured[latencyKey];
+
+  const measureLatency = async () => {
+    setMeasuring(true);
+    setMeasureMsg(null);
+    try {
+      const r = await engine.measureLatency();
+      if (r) {
+        update({ measured: { ...settings.measured, [latencyKey]: Math.round(r.ms * 10) / 10 } });
+        setMeasureMsg(`Detectados ${r.clicks} de 6 clics.`);
+      } else {
+        setMeasureMsg('No se han detectado los clics. Revisa que el sonido de la salida llegue a la entrada y vuelve a probar.');
+      }
+    } finally {
+      setMeasuring(false);
+    }
+  };
+
+  const toggleLowLatency = async (on: boolean) => {
+    setSwitching(true);
+    try {
+      await engine.setLowLatency(on);
+      update({ lowLatency: on });
+      setLatency(engine.latency());
+    } catch (e) {
+      setError(describeError(e));
+    } finally {
+      setSwitching(false);
+    }
+  };
+
+  const autoGate = async () => {
+    const floor = await engine.measureNoiseFloor(2000);
+    const threshold = Number.isFinite(floor) ? Math.max(-90, Math.min(-20, Math.round(floor + 6))) : -80;
+    setBoard((b) =>
+      b.map((p) => (p.type === 'gate' ? { ...p, enabled: true, params: { ...p.params, threshold } } : p))
+    );
+    return threshold;
+  };
 
   const currentPreset = [...FACTORY_PRESETS, ...userPresets].find((p) => p.id === presetId);
   const modified = !currentPreset || !sameBoard(currentPreset.board, board);
@@ -199,12 +281,13 @@ export default function App() {
   const start = async () => {
     setPhase('starting');
     setError(null);
+    engine.setIrLoader(loadIr);
+    await engine.setLowLatency(settings.lowLatency);
     try {
       await open(settings.inputId);
       engine.setChannelMode(settings.channelMode);
       engine.setInputGainDb(settings.gainDb);
       engine.setRecordSource(settings.recordSource);
-      engine.chain?.setIrLoader(loadIr);
       await refreshDevices();
       if (settings.outputId) await engine.setOutputDevice(settings.outputId).catch(() => update({ outputId: '' }));
       setPhase('running');
@@ -296,8 +379,10 @@ export default function App() {
               <dd>{(latency.sampleRate / 1000).toFixed(1)} kHz</dd>
             </div>
             <div>
-              <dt>Latencia estimada</dt>
-              <dd className={totalLatency > 30 ? 'warn' : undefined}>{totalLatency.toFixed(0)} ms</dd>
+              <dt>{measuredMs != null ? 'Latencia medida' : 'Latencia estimada'}</dt>
+              <dd className={(measuredMs ?? totalLatency) > 30 ? 'warn' : undefined}>
+                {(measuredMs ?? totalLatency).toFixed(0)} ms
+              </dd>
             </div>
           </dl>
         )}
@@ -337,7 +422,16 @@ export default function App() {
       {error && <p className="notice error">{error}</p>}
 
       <div className="layout audio" role="tabpanel" id="panel-audio" aria-labelledby="tab-audio" hidden={tab !== 'audio'}>
-        <Tuner engine={engine} a4={settings.a4} onA4={(a4) => update({ a4 })} active={tab === 'audio'} />
+        <Tuner
+          engine={engine}
+          a4={settings.a4}
+          onA4={(a4) => update({ a4 })}
+          active={tab === 'audio'}
+          tuningId={settings.tuning}
+          onTuning={(tuning) => update({ tuning })}
+          muted={tunerMute}
+          onMute={setTunerMute}
+        />
 
         <section className="panel input" aria-labelledby="input-title">
           <div className="panel-head">
@@ -390,6 +484,7 @@ export default function App() {
           <LevelMeter engine={engine} active={tab === 'audio'} />
         </section>
 
+        <div className="stack">
         <section className="panel monitor" aria-labelledby="monitor-title">
           <div className="panel-head">
             <h2 id="monitor-title">Escucha</h2>
@@ -440,14 +535,64 @@ export default function App() {
             <p className="hint">Este navegador usa la salida de audio del sistema.</p>
           )}
 
-          {latency && (
-            <p className="hint">
-              Salida {latency.outputMs.toFixed(1)} ms
-              {latency.inputMs != null ? `, entrada ${latency.inputMs.toFixed(1)} ms` : ''}. Por debajo de 20 ms se toca con
-              comodidad.
-            </p>
-          )}
         </section>
+        <section className="panel latency" aria-labelledby="latency-title">
+          <div className="panel-head">
+            <h2 id="latency-title">Latencia</h2>
+          </div>
+            {latency && (
+              <dl className="latency-values">
+                <div>
+                  <dt>Estimada por el navegador</dt>
+                  <dd>{totalLatency.toFixed(1)} ms</dd>
+                </div>
+                <div>
+                  <dt>Medida (ida y vuelta)</dt>
+                  <dd>{measuredMs != null ? `${measuredMs.toFixed(1)} ms` : 'Sin medir'}</dd>
+                </div>
+              </dl>
+            )}
+            <p className="hint">Por debajo de 20 ms se toca con comodidad. Nunca escuches por Bluetooth: añade más de 150 ms.</p>
+            <button className="btn" onClick={measureLatency} disabled={measuring || recording || switching}>
+              {measuring ? 'Midiendo…' : 'Medir latencia'}
+            </button>
+            {measureMsg && <p className="hint">{measureMsg}</p>}
+            <details className="help">
+              <summary>Cómo funciona la medición</summary>
+              <p>
+                La app emite seis clics por la salida y los busca en la entrada. El tiempo que tardan en volver es la
+                latencia real de ida y vuelta, la que notas al tocar.
+              </p>
+              <p>
+                Para que funcione, el sonido de la salida tiene que llegar a la entrada: con el micrófono del equipo, usa los
+                altavoces a volumen medio; con una interfaz, conecta un cable de su salida a una de sus entradas o activa su
+                función de loopback si la tiene. La guitarra no capta el sonido, así que con ella sola la medición no
+                funciona.
+              </p>
+              <p>Baja el volumen de los auriculares antes de medir: los clics son cortos pero agudos.</p>
+            </details>
+
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={settings.lowLatency}
+                disabled={switching || recording}
+                onChange={(e) => toggleLowLatency(e.target.checked)}
+              />
+              <span>
+                Latencia mínima
+                <small>Pide al navegador el búfer de audio más pequeño. Si oyes cortes o chasquidos, desactívalo.</small>
+              </span>
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={settings.wakeLock} onChange={(e) => update({ wakeLock: e.target.checked })} />
+              <span>
+                Mantener la pantalla encendida
+                <small>Evita que el móvil se bloquee mientras tocas.</small>
+              </span>
+            </label>
+        </section>
+        </div>
 
       </div>
 
@@ -491,7 +636,12 @@ export default function App() {
             />
           </div>
           <p className="hint flow">La señal entra por el pedal 1 y sale por el último. Arrastra un pedal por su número para cambiar el orden.</p>
-          <Pedalboard board={board} onChange={setBoard} ir={{ irs, onUploadIr: uploadIr, onDeleteIr: removeIr }} />
+          <Pedalboard
+            board={board}
+            onChange={setBoard}
+            ir={{ irs, onUploadIr: uploadIr, onDeleteIr: removeIr }}
+            onAutoGate={autoGate}
+          />
         </section>
 
         <Recorder

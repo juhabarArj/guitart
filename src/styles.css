@@ -1112,3 +1112,117 @@ input[type='range'] {
     padding: 0.5rem 0.75rem;
   }
 }
+
+/* Fase 4: afinaciones, latencia y opciones */
+.tuner-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.tuning-select select {
+  width: auto;
+  padding: 0.35rem 0.5rem;
+}
+
+.switch.small {
+  padding: 0.25rem 0.75rem 0.25rem 0.5rem;
+  font-size: 0.875rem;
+}
+
+.switch.small .lamp {
+  width: 10px;
+  height: 10px;
+}
+
+.tuner .switch.on .lamp {
+  background: var(--rec);
+  box-shadow: 0 0 8px var(--rec);
+}
+
+.stack {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+  min-width: 0;
+}
+
+.latency {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.latency .panel-head {
+  margin-bottom: 0;
+}
+
+.latency .btn {
+  justify-self: start;
+}
+
+.latency-values {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.latency-values dt {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.latency-values dd {
+  margin: 0;
+  font-family: var(--font-face);
+  font-size: 1.25rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.help {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.help summary {
+  cursor: pointer;
+  color: var(--silk);
+}
+
+.help p {
+  margin: 0.5rem 0 0;
+}
+
+.check {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.check input {
+  margin-top: 0.3rem;
+  accent-color: var(--amber);
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.check small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.gate-auto {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+}
+
+.gate-auto .hint {
+  font-size: 0.8125rem;
+}

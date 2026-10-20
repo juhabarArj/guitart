@@ -48,6 +48,17 @@ export function detectPitch(buf: Float32Array, sampleRate: number, threshold = 0
 
 const LATIN = ['Do', 'Do♯', 'Re', 'Re♯', 'Mi', 'Fa', 'Fa♯', 'Sol', 'Sol♯', 'La', 'La♯', 'Si'];
 const LETTER = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
+const LATIN_FLAT = ['Do', 'Re♭', 'Re', 'Mi♭', 'Mi', 'Fa', 'Sol♭', 'Sol', 'La♭', 'La', 'Si♭', 'Si'];
+const LETTER_FLAT = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'];
+
+export function midiName(midi: number, flats = false) {
+  const idx = ((midi % 12) + 12) % 12;
+  return {
+    latin: (flats ? LATIN_FLAT : LATIN)[idx],
+    letter: (flats ? LETTER_FLAT : LETTER)[idx],
+    octave: Math.floor(midi / 12) - 1
+  };
+}
 
 export interface NoteReading {
   freq: number;
@@ -58,19 +69,28 @@ export interface NoteReading {
   octave: number;
 }
 
-export function noteFromFreq(freq: number, a4 = 440): NoteReading {
+export function noteFromFreq(freq: number, a4 = 440, flats = false): NoteReading {
   const exact = 69 + 12 * Math.log2(freq / a4);
   const midi = Math.round(exact);
   const cents = (exact - midi) * 100;
-  const idx = ((midi % 12) + 12) % 12;
-  return { freq, midi, cents, latin: LATIN[idx], letter: LETTER[idx], octave: Math.floor(midi / 12) - 1 };
+  return { freq, midi, cents, ...midiName(midi, flats) };
 }
 
-export const STANDARD_TUNING = [
-  { midi: 40, latin: 'Mi', letter: 'E2' },
-  { midi: 45, latin: 'La', letter: 'A2' },
-  { midi: 50, latin: 'Re', letter: 'D3' },
-  { midi: 55, latin: 'Sol', letter: 'G3' },
-  { midi: 59, latin: 'Si', letter: 'B3' },
-  { midi: 64, latin: 'Mi', letter: 'E4' }
+export interface Tuning {
+  id: string;
+  name: string;
+  /** Cuerdas de la 6.ª (grave) a la 1.ª (aguda), en notas MIDI */
+  midi: number[];
+  flats?: boolean;
+}
+
+export const TUNINGS: Tuning[] = [
+  { id: 'standard', name: 'Estándar', midi: [40, 45, 50, 55, 59, 64] },
+  { id: 'dropd', name: 'Drop D', midi: [38, 45, 50, 55, 59, 64] },
+  { id: 'half', name: 'Medio tono abajo', midi: [39, 44, 49, 54, 58, 63], flats: true },
+  { id: 'whole', name: 'Un tono abajo', midi: [38, 43, 48, 53, 57, 62] },
+  { id: 'dropc', name: 'Drop C', midi: [36, 43, 48, 53, 57, 62] },
+  { id: 'openg', name: 'Open G', midi: [38, 43, 50, 55, 59, 62] },
+  { id: 'opend', name: 'Open D', midi: [38, 45, 50, 54, 57, 62] },
+  { id: 'dadgad', name: 'DADGAD', midi: [38, 45, 50, 55, 57, 62] }
 ];

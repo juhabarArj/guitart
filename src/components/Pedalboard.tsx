@@ -154,7 +154,39 @@ function Pedal({
   );
 }
 
-export function Pedalboard({ board, onChange, ir }: { board: BoardState; onChange: (b: BoardState) => void; ir: IrActions }) {
+function GateAuto({ onAutoGate }: { onAutoGate: () => Promise<number> }) {
+  const [state, setState] = useState<'idle' | 'measuring' | number>('idle');
+  return (
+    <div className="gate-auto">
+      <button
+        className="btn"
+        disabled={state === 'measuring'}
+        onClick={async () => {
+          setState('measuring');
+          setState(await onAutoGate());
+        }}
+      >
+        {state === 'measuring' ? 'Escuchando el ruido…' : 'Ajustar automáticamente'}
+      </button>
+      <p className="hint">
+        {state === 'measuring'
+          ? 'No toques las cuerdas durante 2 segundos.'
+          : typeof state === 'number'
+            ? `Umbral ajustado a ${state} dB.`
+            : 'Mide el ruido de fondo con la guitarra en silencio y fija el umbral justo por encima.'}
+      </p>
+    </div>
+  );
+}
+
+interface PedalboardProps {
+  board: BoardState;
+  onChange: (b: BoardState) => void;
+  ir: IrActions;
+  onAutoGate: () => Promise<number>;
+}
+
+export function Pedalboard({ board, onChange, ir, onAutoGate }: PedalboardProps) {
   const [dragging, setDragging] = useState<EffectType | null>(null);
 
   // Al reordenar, el navegador puede perder la captura del puntero: el fin del arrastre se escucha en la ventana
@@ -187,7 +219,13 @@ export function Pedalboard({ board, onChange, ir }: { board: BoardState; onChang
           index={i}
           dragging={dragging === pedal.type}
           onUpdate={update}
-          extra={pedal.type === 'cab' ? <CabIr pedal={pedal} onUpdate={update} {...ir} /> : undefined}
+          extra={
+            pedal.type === 'cab' ? (
+              <CabIr pedal={pedal} onUpdate={update} {...ir} />
+            ) : pedal.type === 'gate' ? (
+              <GateAuto onAutoGate={onAutoGate} />
+            ) : undefined
+          }
           onDragStart={(e) => {
             e.preventDefault();
             setDragging(pedal.type);

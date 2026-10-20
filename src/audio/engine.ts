@@ -1,4 +1,5 @@
-import { EffectChain } from './chain';
+import { EffectChain, type BoardState } from './chain';
+import type { IrLoader } from './effects';
 import { detectPitch } from './pitch';
 
 export type ChannelMode = 'left' | 'right' | 'stereo';
@@ -13,6 +14,11 @@ export interface LatencyInfo {
 export interface Level {
   peakDb: number;
   rmsDb: number;
+}
+
+export interface LatencyMeasurement {
+  ms: number;
+  clicks: number;
 }
 
 const toDb = (x: number) => (x > 0 ? 20 * Math.log10(x) : -Infinity);
@@ -34,41 +40,61 @@ function protectCurve(): Float32Array<ArrayBuffer> {
  *  entrada ─► splitter ─► (canal elegido) ─► ganancia ─┬─► medidor
  *                                                    ├─► afinador
  *                                                    ├─► (captura en seco)
- *                                                    └─► pedalera ─► protección ─┬─► monitor ─► salida
+ *                                                    └─► pedalera ─► protección ─┬─► silencio de afinador ─► monitor ─► salida
  *                                                                               └─► (captura con efectos)
  *
- * La captura (worklet) se conecta a la señal seca o a la de la pedalera según la opción elegida.
+ * El contexto de audio se crea con la frecuencia de muestreo de la interfaz para evitar remuestreos.
+ * Si cambia la entrada a otra frecuencia, o el modo de latencia, el grafo se reconstruye y se
+ * restaura todo el estado (canal, ganancia, escucha, salida, pedalera…).
  */
 export class AudioEngine {
   ctx: AudioContext | null = null;
+  chain: EffectChain | null = null;
   private stream: MediaStream | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
   private splitter: ChannelSplitterNode | null = null;
   private inputGain!: GainNode;
+  private tunerMuteGain!: GainNode;
   private monitorGain!: GainNode;
   private meter!: AnalyserNode;
   private tuner!: AnalyserNode;
   private capture!: AudioWorkletNode;
-  chain: EffectChain | null = null;
   private protect!: WaveShaperNode;
-  private recordSource: RecordSource = 'wet';
+  private silent!: GainNode;
   private meterBuf = new Float32Array(2048);
   private tunerBuf = new Float32Array(4096);
-  private channelMode: ChannelMode = 'left';
   private chunks: Float32Array[][] = [];
   private onStopped: (() => void) | null = null;
 
-  private async init() {
-    if (this.ctx) return;
-    const ctx = new AudioContext({ latencyHint: 'interactive' });
+  // Estado que sobrevive a una reconstrucción del grafo
+  private state = {
+    channelMode: 'left' as ChannelMode,
+    gainDb: 0,
+    monitorOn: false,
+    monitorVolume: 0.8,
+    tunerMute: false,
+    sinkId: '',
+    recordSource: 'wet' as RecordSource,
+    board: null as BoardState | null,
+    lowLatency: false
+  };
+  private irLoader: IrLoader | null = null;
+
+  private async build(sampleRate?: number) {
+    const latencyHint = this.state.lowLatency ? 0 : 'interactive';
+    let ctx: AudioContext;
+    try {
+      ctx = new AudioContext({ latencyHint, sampleRate });
+    } catch {
+      ctx = new AudioContext({ latencyHint }); // frecuencia no admitida: la del sistema
+    }
     const base = import.meta.env.BASE_URL;
-    await Promise.all([
-      ctx.audioWorklet.addModule(`${base}worklets/capture-processor.js`),
-      ctx.audioWorklet.addModule(`${base}worklets/gate-processor.js`),
-      ctx.audioWorklet.addModule(`${base}worklets/comp-processor.js`)
-    ]);
+    await Promise.all(
+      ['capture', 'gate', 'comp', 'probe'].map((n) => ctx.audioWorklet.addModule(`${base}worklets/${n}-processor.js`))
+    );
 
     this.inputGain = new GainNode(ctx, { gain: 1 });
+    this.tunerMuteGain = new GainNode(ctx, { gain: 1 });
     this.monitorGain = new GainNode(ctx, { gain: 0 });
     this.meter = new AnalyserNode(ctx, { fftSize: 2048 });
     this.tuner = new AnalyserNode(ctx, { fftSize: 4096 });
@@ -77,7 +103,8 @@ export class AudioEngine {
       numberOfOutputs: 1,
       outputChannelCount: [1]
     });
-    const silent = new GainNode(ctx, { gain: 0 });
+    this.silent = new GainNode(ctx, { gain: 0 });
+    this.silent.connect(ctx.destination);
 
     this.inputGain.connect(this.meter);
     this.inputGain.connect(this.tuner);
@@ -86,10 +113,14 @@ export class AudioEngine {
     // Protección de salida: transparente hasta -2 dBFS, redondea los picos en vez de recortarlos en seco
     const protectIn = new GainNode(ctx, { gain: 0.5 });
     this.protect = new WaveShaperNode(ctx, { curve: protectCurve() });
-    chain.output.connect(protectIn).connect(this.protect).connect(this.monitorGain).connect(ctx.destination);
-    this.chain = chain;
-    // El worklet necesita estar conectado al destino para que el navegador lo procese
-    this.capture.connect(silent).connect(ctx.destination);
+    chain.output
+      .connect(protectIn)
+      .connect(this.protect)
+      .connect(this.tunerMuteGain)
+      .connect(this.monitorGain)
+      .connect(ctx.destination);
+    // Los worklets necesitan estar conectados al destino para que el navegador los procese
+    this.capture.connect(this.silent);
 
     this.capture.port.onmessage = (e: MessageEvent) => {
       if (e.data.type === 'chunk') this.chunks.push(e.data.channels);
@@ -99,13 +130,149 @@ export class AudioEngine {
       }
     };
     this.ctx = ctx;
-    this.setRecordSource(this.recordSource);
+    this.chain = chain;
+  }
+
+  /** Reaplica todo el estado guardado sobre un grafo recién creado. */
+  private async restore() {
+    const s = this.state;
+    if (this.irLoader) this.chain!.setIrLoader(this.irLoader);
+    if (s.board) this.chain!.apply(s.board);
+    this.setRecordSource(s.recordSource);
+    this.setInputGainDb(s.gainDb);
+    this.setMonitor(s.monitorOn, s.monitorVolume);
+    this.setTunerMute(s.tunerMute);
+    if (s.sinkId) await this.setOutputDevice(s.sinkId).catch(() => (s.sinkId = ''));
+  }
+
+  private async rebuild(sampleRate?: number) {
+    this.detachSource();
+    if (this.ctx) await this.ctx.close().catch(() => undefined);
+    this.ctx = null;
+    this.chain = null;
+    await this.build(sampleRate);
+    if (this.stream) this.attachStream(this.stream);
+    await this.restore();
+    if (this.ctx!.state !== 'running') await this.ctx!.resume();
+  }
+
+  private attachStream(stream: MediaStream) {
+    const ctx = this.ctx!;
+    this.source = ctx.createMediaStreamSource(stream);
+    this.splitter = new ChannelSplitterNode(ctx, { numberOfOutputs: 2 });
+    this.source.connect(this.splitter);
+    this.route();
+  }
+
+  private detachSource() {
+    this.source?.disconnect();
+    this.splitter?.disconnect();
+    this.source = null;
+    this.splitter = null;
+  }
+
+  /** Abre una entrada de audio sin el procesado de voz del navegador. */
+  async openInput(deviceId?: string): Promise<MediaTrackSettings> {
+    this.detachSource();
+    this.stream?.getTracks().forEach((t) => t.stop());
+    this.stream = null;
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId: deviceId ? { exact: deviceId } : undefined,
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        channelCount: { ideal: 2 }
+      }
+    });
+    this.stream = stream;
+    const settings = stream.getAudioTracks()[0]?.getSettings() ?? {};
+    const rate = settings.sampleRate;
+
+    if (!this.ctx || (rate && this.ctx.sampleRate !== rate)) {
+      await this.rebuild(rate);
+    } else {
+      this.attachStream(stream);
+      if (this.ctx.state !== 'running') await this.ctx.resume();
+    }
+    return settings;
+  }
+
+  /** Cambia entre latencia normal y mínima (reconstruye el grafo). */
+  async setLowLatency(on: boolean) {
+    if (this.state.lowLatency === on && this.ctx) return;
+    this.state.lowLatency = on;
+    if (this.ctx) await this.rebuild(this.ctx.sampleRate);
+  }
+
+  /** Android suspende el audio en segundo plano: al volver, se reanuda. */
+  async resume() {
+    if (this.ctx && this.ctx.state !== 'running') await this.ctx.resume().catch(() => undefined);
+  }
+
+  setChannelMode(mode: ChannelMode) {
+    this.state.channelMode = mode;
+    this.route();
+  }
+
+  private route() {
+    if (!this.source || !this.splitter) return;
+    try {
+      this.source.disconnect(this.inputGain);
+    } catch {
+      /* no estaba conectado */
+    }
+    this.splitter.disconnect();
+    const mode = this.state.channelMode;
+    if (mode === 'stereo') this.source.connect(this.inputGain);
+    else this.splitter.connect(this.inputGain, mode === 'left' ? 0 : 1);
+  }
+
+  setInputGainDb(db: number) {
+    this.state.gainDb = db;
+    if (!this.ctx) return;
+    this.inputGain.gain.setTargetAtTime(10 ** (db / 20), this.ctx.currentTime, 0.01);
+  }
+
+  setMonitor(on: boolean, volume: number) {
+    this.state.monitorOn = on;
+    this.state.monitorVolume = volume;
+    if (!this.ctx) return;
+    this.monitorGain.gain.setTargetAtTime(on ? volume : 0, this.ctx.currentTime, 0.02);
+  }
+
+  /** Silencia la salida (no la grabación) mientras se afina, como un pedal afinador. */
+  setTunerMute(on: boolean) {
+    this.state.tunerMute = on;
+    if (!this.ctx) return;
+    this.tunerMuteGain.gain.setTargetAtTime(on ? 0 : 1, this.ctx.currentTime, 0.01);
+  }
+
+  applyBoard(board: BoardState) {
+    this.state.board = board;
+    this.chain?.apply(board);
+  }
+
+  setIrLoader(loader: IrLoader) {
+    this.irLoader = loader;
+    this.chain?.setIrLoader(loader);
+  }
+
+  get canChooseOutput(): boolean {
+    return typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype;
+  }
+
+  async setOutputDevice(deviceId: string) {
+    this.state.sinkId = deviceId;
+    if (!this.ctx || !this.canChooseOutput) return;
+    await (this.ctx as AudioContext & { setSinkId(id: string): Promise<void> }).setSinkId(deviceId);
   }
 
   /** Graba la salida de la pedalera (estéreo) o la señal de la guitarra sin efectos. */
   setRecordSource(source: RecordSource) {
-    this.recordSource = source;
-    if (!this.chain) return;
+    this.state.recordSource = source;
+    if (!this.ctx) return;
     for (const node of [this.inputGain, this.protect]) {
       try {
         node.disconnect(this.capture);
@@ -121,75 +288,6 @@ export class AudioEngine {
       this.capture.channelCountMode = 'max';
       this.inputGain.connect(this.capture);
     }
-  }
-
-  /** Abre una entrada de audio sin el procesado de voz del navegador. */
-  async openInput(deviceId?: string): Promise<MediaTrackSettings> {
-    await this.init();
-    const ctx = this.ctx!;
-    this.closeInput();
-
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        deviceId: deviceId ? { exact: deviceId } : undefined,
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-        channelCount: { ideal: 2 }
-      }
-    });
-    this.stream = stream;
-    this.source = ctx.createMediaStreamSource(stream);
-    this.splitter = new ChannelSplitterNode(ctx, { numberOfOutputs: 2 });
-    this.source.connect(this.splitter);
-    this.route();
-    if (ctx.state !== 'running') await ctx.resume();
-    return stream.getAudioTracks()[0]?.getSettings() ?? {};
-  }
-
-  closeInput() {
-    this.stream?.getTracks().forEach((t) => t.stop());
-    this.source?.disconnect();
-    this.splitter?.disconnect();
-    this.stream = null;
-    this.source = null;
-    this.splitter = null;
-  }
-
-  setChannelMode(mode: ChannelMode) {
-    this.channelMode = mode;
-    this.route();
-  }
-
-  private route() {
-    if (!this.source || !this.splitter) return;
-    try {
-      this.source.disconnect(this.inputGain);
-    } catch {
-      /* no estaba conectado */
-    }
-    this.splitter.disconnect();
-    if (this.channelMode === 'stereo') this.source.connect(this.inputGain);
-    else this.splitter.connect(this.inputGain, this.channelMode === 'left' ? 0 : 1);
-  }
-
-  setInputGainDb(db: number) {
-    if (!this.ctx) return;
-    this.inputGain.gain.setTargetAtTime(10 ** (db / 20), this.ctx.currentTime, 0.01);
-  }
-
-  setMonitor(on: boolean, volume: number) {
-    if (!this.ctx) return;
-    this.monitorGain.gain.setTargetAtTime(on ? volume : 0, this.ctx.currentTime, 0.02);
-  }
-
-  get canChooseOutput(): boolean {
-    return typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype;
-  }
-
-  async setOutputDevice(deviceId: string) {
-    if (!this.ctx || !this.canChooseOutput) return;
-    await (this.ctx as AudioContext & { setSinkId(id: string): Promise<void> }).setSinkId(deviceId);
   }
 
   readLevel(): Level {
@@ -212,6 +310,17 @@ export class AudioEngine {
     return detectPitch(this.tunerBuf, this.ctx.sampleRate);
   }
 
+  /** Pico máximo de la entrada (dBFS) durante unos milisegundos, para medir el ruido de fondo. */
+  async measureNoiseFloor(ms = 2000): Promise<number> {
+    let max = -Infinity;
+    const end = performance.now() + ms;
+    while (performance.now() < end) {
+      max = Math.max(max, this.readLevel().peakDb);
+      await new Promise((r) => setTimeout(r, 40));
+    }
+    return max;
+  }
+
   latency(): LatencyInfo | null {
     if (!this.ctx) return null;
     const track = this.stream?.getAudioTracks()[0];
@@ -221,6 +330,89 @@ export class AudioEngine {
       outputMs: (this.ctx.baseLatency + (this.ctx.outputLatency || 0)) * 1000,
       inputMs: typeof inLat === 'number' ? inLat * 1000 : null
     };
+  }
+
+  /**
+   * Mide la latencia real de ida y vuelta: emite 6 clics por la salida y busca cada uno en la entrada
+   * por correlación. Necesita que el sonido de la salida llegue a la entrada (altavoz y micrófono,
+   * o un cable de salida a entrada). Devuelve null si no se detectan los clics de forma fiable.
+   */
+  async measureLatency(): Promise<LatencyMeasurement | null> {
+    const ctx = this.ctx;
+    if (!ctx) return null;
+    const sr = ctx.sampleRate;
+
+    // Clic: barrido corto de 1 a 6 kHz con ventana, fácil de distinguir del ruido
+    const clickLen = Math.round(sr * 0.003);
+    const click = ctx.createBuffer(1, clickLen, sr);
+    const cd = click.getChannelData(0);
+    for (let i = 0; i < clickLen; i++) {
+      const t = i / sr;
+      const f = 1000 + (5000 * i) / clickLen;
+      cd[i] = Math.sin(2 * Math.PI * f * t) * Math.sin((Math.PI * i) / clickLen) ** 2;
+    }
+
+    const clicks = 6;
+    const gap = 0.4;
+    const lead = 0.3;
+    const frames = Math.round(sr * (lead + clicks * gap + 0.5));
+
+    const probe = new AudioWorkletNode(ctx, 'probe-processor', {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [1]
+    });
+    this.inputGain.connect(probe);
+    probe.connect(this.silent);
+    const clickOut = new GainNode(ctx, { gain: 0.3 });
+    clickOut.connect(ctx.destination);
+    // Sin escucha durante la medición, para no medir un acople
+    this.monitorGain.gain.setTargetAtTime(0, ctx.currentTime, 0.005);
+
+    const result = new Promise<{ startFrame: number; data: Float32Array }>((resolve) => {
+      probe.port.onmessage = (e) => resolve(e.data);
+    });
+    probe.port.postMessage({ cmd: 'start', frames });
+    const t0 = ctx.currentTime + lead;
+    for (let k = 0; k < clicks; k++) {
+      const src = new AudioBufferSourceNode(ctx, { buffer: click });
+      src.connect(clickOut);
+      src.start(t0 + k * gap);
+    }
+
+    const { startFrame, data } = await result;
+    probe.disconnect();
+    this.inputGain.disconnect(probe);
+    clickOut.disconnect();
+    this.setMonitor(this.state.monitorOn, this.state.monitorVolume);
+
+    const lags: number[] = [];
+    const win = Math.round(sr * gap * 0.9);
+    for (let k = 0; k < clicks; k++) {
+      const offset = Math.round((t0 + k * gap) * sr) - startFrame;
+      if (offset < 0 || offset + win + clickLen > data.length) continue;
+      let best = 0;
+      let bestLag = -1;
+      let sumAbs = 0;
+      for (let lag = 0; lag < win; lag++) {
+        let c = 0;
+        for (let i = 0; i < clickLen; i++) c += cd[i] * data[offset + lag + i];
+        const a = Math.abs(c);
+        sumAbs += a;
+        if (a > best) {
+          best = a;
+          bestLag = lag;
+        }
+      }
+      // Solo se acepta si el pico destaca claramente sobre la media
+      if (bestLag >= 0 && best > (sumAbs / win) * 12) lags.push(bestLag);
+    }
+    if (lags.length < 3) return null;
+    lags.sort((a, b) => a - b);
+    const median = lags[lags.length >> 1];
+    const consistent = lags.filter((l) => Math.abs(l - median) < sr * 0.002);
+    if (consistent.length < 3) return null;
+    return { ms: (median / sr) * 1000, clicks: consistent.length };
   }
 
   startRecording() {

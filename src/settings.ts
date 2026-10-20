@@ -14,6 +14,11 @@ export interface Settings {
   recordSource: RecordSource;
   theme: ThemeName;
   tab: TabName;
+  lowLatency: boolean;
+  wakeLock: boolean;
+  tuning: string;
+  /** Latencias medidas (ms) por combinación de entrada, salida y modo de latencia */
+  measured: Record<string, number>;
 }
 
 const KEY = 'guitart:settings';
@@ -26,7 +31,11 @@ const DEFAULTS: Settings = {
   a4: 440,
   recordSource: 'wet',
   theme: 'auto',
-  tab: 'audio'
+  tab: 'audio',
+  lowLatency: false,
+  wakeLock: true,
+  tuning: 'standard',
+  measured: {}
 };
 
 export function useSettings() {

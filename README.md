@@ -4,7 +4,16 @@ Estudio de guitarra en el navegador: afinador, simulador de amplificador, pedale
 
 **Demo:** https://juhabararj.github.io/guitart/
 
-## Versión 0.4 (esta versión)
+## Fase 4 (esta versión, 0.5)
+
+- El contexto de audio adopta la frecuencia de muestreo de la interfaz (sin remuestreo); al cambiar de entrada o de modo se reconstruye conservando todo el estado
+- Modo de latencia mínima opcional
+- Medición real de la latencia de ida y vuelta con clics y correlación
+- Pantalla siempre encendida mientras el audio está activo, y reanudación automática del audio al volver a la app en Android
+- Afinaciones alternativas (Drop D, medio tono y un tono abajo, Drop C, Open G, Open D, DADGAD) y silencio de la salida al afinar
+- Puerta de ruido con ajuste automático del umbral
+
+## Versión 0.4
 
 - Pestañas: «Afinador y audio» y «Pedalera y grabación». La grabación continúa al cambiar de pestaña
 - Afinador, Entrada y Escucha en tres columnas en escritorio
@@ -65,6 +74,7 @@ Desactiva la escucha de Guitart si ya oyes la guitarra por los auriculares de la
 public/worklets/capture-processor.js  Captura PCM en el hilo de audio
 public/worklets/gate-processor.js     Puerta de ruido
 public/worklets/comp-processor.js     Compresor sin latencia añadida
+public/worklets/probe-processor.js    Captura para medir la latencia
 src/audio/engine.ts                    Grafo de audio (entrada, canal, ganancia, pedalera, monitor, captura)
 src/audio/effects.ts                   Definición y procesado de cada pedal
 src/audio/chain.ts                     Cadena de efectos y estado de la pedalera
@@ -81,13 +91,7 @@ src/components/                        Afinador, medidor y grabadora
 1. ~~MVP: entrada, monitor, afinador, grabación~~
 2. ~~Cadena de efectos reordenable y presets~~
 3. ~~Simulador de amplificador y cargador de IR~~
-4. **Audio y latencia.** Va antes del looper porque la latencia medida sirve para alinear las capas grabadas.
-   - Adoptar la frecuencia de muestreo de la interfaz para evitar el remuestreo
-   - Modo de latencia mínima (opcional)
-   - Medición real de la latencia con un clic de ida y vuelta
-   - Pantalla siempre encendida mientras se toca
-   - Afinaciones alternativas (Drop D, medio tono abajo…) y silencio de la salida al afinar
-   - Puerta de ruido autoajustable
-5. **Looper y estudio.** Looper, metrónomo con cuenta atrás, caja de ritmos, multipista y re-amp (aplicar la pedalera a una toma en seco)
+4. ~~Audio y latencia~~
+5. **Looper y estudio.** Looper en una pestaña propia con guía de uso integrada, metrónomo con cuenta atrás, caja de ritmos, multipista y re-amp (aplicar la pedalera a una toma en seco). Las capas se alinean con la latencia medida
 6. **Control.** MIDI, pedal Bluetooth, atajos de teclado y copia de seguridad completa de presets e IR
 7. **Futuro.** Modelos de amplificador neuronales (NAM) en WASM

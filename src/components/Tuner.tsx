@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AudioEngine } from '../audio/engine';
-import { noteFromFreq, STANDARD_TUNING, type NoteReading } from '../audio/pitch';
+import { midiName, noteFromFreq, TUNINGS, type NoteReading } from '../audio/pitch';
 
 const W = 320;
 const CX = W / 2;
@@ -21,9 +21,14 @@ interface TunerProps {
   onA4: (v: number) => void;
   /** Con la pestaña oculta no se analiza el tono (ahorra CPU y batería). */
   active: boolean;
+  tuningId: string;
+  onTuning: (id: string) => void;
+  muted: boolean;
+  onMute: (on: boolean) => void;
 }
 
-export function Tuner({ engine, a4, onA4, active }: TunerProps) {
+export function Tuner({ engine, a4, onA4, active, tuningId, onTuning, muted, onMute }: TunerProps) {
+  const tuning = TUNINGS.find((t) => t.id === tuningId) ?? TUNINGS[0];
   const [reading, setReading] = useState<NoteReading | null>(null);
   const history = useRef<number[]>([]);
   const lastSeen = useRef(0);
@@ -45,10 +50,10 @@ export function Tuner({ engine, a4, onA4, active }: TunerProps) {
       h.push(f);
       if (h.length > 5) h.shift();
       const median = [...h].sort((a, b) => a - b)[h.length >> 1];
-      setReading(noteFromFreq(median, a4));
+      setReading(noteFromFreq(median, a4, tuning.flats));
     }, 60);
     return () => window.clearInterval(id);
-  }, [engine, a4, active]);
+  }, [engine, a4, active, tuning]);
 
   const cents = reading ? Math.max(-50, Math.min(50, reading.cents)) : 0;
   const inTune = reading != null && Math.abs(reading.cents) < 5;
@@ -71,6 +76,29 @@ export function Tuner({ engine, a4, onA4, active }: TunerProps) {
           />
           Hz
         </label>
+      </div>
+
+      <div className="tuner-options">
+        <label className="tuning-select">
+          <span className="visually-hidden">Afinación</span>
+          <select value={tuning.id} onChange={(e) => onTuning(e.target.value)}>
+            {TUNINGS.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          className={`switch small${muted ? ' on' : ''}`}
+          role="switch"
+          aria-checked={muted}
+          onClick={() => onMute(!muted)}
+          title="Silencia la salida mientras afinas. La grabación no se ve afectada."
+        >
+          <span className="lamp" aria-hidden="true" />
+          {muted ? 'Salida silenciada' : 'Silenciar al afinar'}
+        </button>
       </div>
 
       <svg className="gauge" viewBox={`0 0 ${W} 196`} aria-hidden="true">
@@ -121,13 +149,19 @@ export function Tuner({ engine, a4, onA4, active }: TunerProps) {
         </span>
       </div>
 
-      <ol className="strings" aria-label="Afinación estándar">
-        {STANDARD_TUNING.map((s, i) => (
-          <li key={i} className={reading?.midi === s.midi ? 'active' : undefined}>
-            <span>{s.latin}</span>
-            <small>{s.letter}</small>
-          </li>
-        ))}
+      <ol className="strings" aria-label={`Afinación ${tuning.name}`}>
+        {tuning.midi.map((m, i) => {
+          const n = midiName(m, tuning.flats);
+          return (
+            <li key={i} className={reading?.midi === m ? 'active' : undefined}>
+              <span>{n.latin}</span>
+              <small>
+                {n.letter}
+                {n.octave}
+              </small>
+            </li>
+          );
+        })}
       </ol>
     </section>
   );
