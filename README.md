@@ -4,7 +4,15 @@ Estudio de guitarra en el navegador: afinador, simulador de amplificador, pedale
 
 **Demo:** https://juhabararj.github.io/guitart/
 
-## Fase 6 (esta versión, 1.0)
+## Tablatura, etapas 1 y 2 (esta versión, 1.1)
+
+- Nueva pestaña «Tablatura». Botón «Pasar a TAB» en las tomas de Grabación y en las pistas del Estudio
+- Transcripción de notas sueltas: ataques por flujo espectral, tono por YIN, división de ligados, tempo estimado o el del metrónomo, cuantización a semicorcheas y digitación con el menor desplazamiento de la mano (Viterbi). Respeta la afinación elegida
+- Vista por compases, reproducción de la grabación o de la tablatura (cuerda pulsada sintética) con cursor
+- Editor: añadir, borrar, cambiar traste, cuerda (misma nota), duración y posición, con ratón o teclado
+- Tablatura en texto para copiar o descargar
+
+## Fase 6 (1.0)
 
 - Nueva pestaña «Ajustes» con atajos y pedales que funcionan desde cualquier pestaña: looper, ritmo, grabación, estudio, presets, pedales por posición y silencio del afinador
 - Asignación por aprendizaje: pulsa Asignar y después la tecla o el interruptor MIDI
@@ -110,6 +118,7 @@ src/audio/studio.ts                    Reproductor y mezcla del multipista
 src/storage/studio.ts                  Proyecto del multipista en IndexedDB
 src/storage/backup.ts                  Copia de seguridad completa
 src/control/                           Acciones, asignaciones, teclado, MIDI y Bluetooth
+src/tab/                               Transcripción, digitación, tablatura de texto y sonido de cuerda
 src/audio/engine.ts                    Grafo de audio (entrada, canal, ganancia, pedalera, monitor, captura)
 src/audio/effects.ts                   Definición y procesado de cada pedal
 src/audio/chain.ts                     Cadena de efectos y estado de la pedalera
@@ -129,4 +138,5 @@ src/components/                        Afinador, medidor y grabadora
 4. ~~Audio y latencia~~
 5. ~~Looper y estudio: looper, metrónomo, caja de ritmos, multipista y re-amp~~
 6. ~~Control: MIDI, pedal Bluetooth, atajos de teclado y copia de seguridad~~
-7. **Futuro.** Modelos de amplificador neuronales (NAM) en WASM
+7. **Tablatura.** ~~Etapas 1 y 2: notas sueltas a TAB, vista y editor~~. Pendiente: 3 exportar a MusicXML y guardar tablaturas; 4 acordes por nombre; 5 acordes nota a nota (IA); 6 técnicas (bends, slides, ligados)
+8. **Futuro.** Reproductor de canciones para practicar, presets por enlace, modelos de amplificador neuronales (NAM) en WASM y conservar el bucle del looper al reconstruir el motor

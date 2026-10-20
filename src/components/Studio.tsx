@@ -19,6 +19,7 @@ interface Props {
   onTakeSaved: () => void;
   theme: string;
   register: Register;
+  onTab: (title: string, buffer: AudioBuffer, dry: boolean) => void;
 }
 
 type Mode = 'idle' | 'playing' | 'recording' | 'working';
@@ -95,7 +96,7 @@ function drawLane(canvas: HTMLCanvasElement, track: StudioTrack, total: number) 
   }
 }
 
-export function Studio({ engine, active, latencyMs, busy, onBusy, board, irLoaderFor, onTakeSaved, theme, register }: Props) {
+export function Studio({ engine, active, latencyMs, busy, onBusy, board, irLoaderFor, onTakeSaved, theme, register, onTab }: Props) {
   const [tracks, setTracks] = useState<StudioTrack[]>(() => [1, 2, 3, 4].map(newTrack));
   const [loaded, setLoaded] = useState(false);
   const [armed, setArmed] = useState<string | null>(null);
@@ -454,6 +455,14 @@ export function Studio({ engine, active, latencyMs, busy, onBusy, board, irLoade
                       </button>
                     </>
                   )}
+                  <button
+                    className="btn small"
+                    disabled={!idle}
+                    title="Convierte la pista en tablatura (usa el original en seco si lo hay)"
+                    onClick={() => onTab(t.name, (t.dry ?? t.audio)!, Boolean(t.dry))}
+                  >
+                    TAB
+                  </button>
                   <button
                     className="btn small ghost danger"
                     disabled={!idle}

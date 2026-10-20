@@ -12,7 +12,7 @@ const clock = (s: number) => {
 
 const dateFmt = new Intl.DateTimeFormat('es-ES', { dateStyle: 'short', timeStyle: 'short' });
 
-function Take({ rec, onDelete, onReamp }: { rec: Recording; onDelete: () => void; onReamp?: () => Promise<void> }) {
+function Take({ rec, onDelete, onReamp, onTab }: { rec: Recording; onDelete: () => void; onReamp?: () => Promise<void>; onTab?: () => void }) {
   const [working, setWorking] = useState(false);
   const url = useMemo(() => URL.createObjectURL(rec.blob), [rec.blob]);
   useEffect(() => () => URL.revokeObjectURL(url), [url]);
@@ -48,6 +48,11 @@ function Take({ rec, onDelete, onReamp }: { rec: Recording; onDelete: () => void
             {working ? 'Procesando…' : 'Re-amp'}
           </button>
         )}
+        {onTab && (
+          <button className="btn ghost" onClick={onTab} title="Convierte la toma en tablatura">
+            Pasar a TAB
+          </button>
+        )}
         <button className="btn ghost danger" onClick={onDelete}>
           Borrar
         </button>
@@ -64,12 +69,13 @@ interface RecorderProps {
   /** Otra sección (el multipista) está usando la grabación */
   blocked: boolean;
   register: Register;
+  onTab: (rec: Recording) => void;
   source: RecordSource;
   onSource: (s: RecordSource) => void;
   onRecordingChange: (on: boolean) => void;
 }
 
-export function Recorder({ engine, version, onReamp, blocked, register, source, onSource, onRecordingChange }: RecorderProps) {
+export function Recorder({ engine, version, onReamp, blocked, register, onTab, source, onSource, onRecordingChange }: RecorderProps) {
   const [takes, setTakes] = useState<Recording[]>([]);
   const [recording, setRecording] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -184,6 +190,7 @@ export function Recorder({ engine, version, onReamp, blocked, register, source, 
               key={t.id}
               rec={t}
               onDelete={() => remove(t.id)}
+              onTab={() => onTab(t)}
               onReamp={async () => {
                 const created = await onReamp(t);
                 setTakes((list) => [created, ...list]);

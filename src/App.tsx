@@ -9,6 +9,7 @@ import { PresetBar } from './components/PresetBar';
 import { Recorder } from './components/Recorder';
 import { Studio } from './components/Studio';
 import { ControlTab } from './components/ControlTab';
+import { TabTab, type TabRequest } from './components/TabTab';
 import { ACTIONS, type ActionId } from './control/actions';
 import { controlInputs, type ControlEvent } from './control/inputs';
 import { useAction, type ActionHandler, type Register } from './control/registry';
@@ -58,6 +59,7 @@ const TABS: { value: TabName; label: string }[] = [
   { value: 'board', label: 'Pedalera y grabación' },
   { value: 'looper', label: 'Looper y ritmo' },
   { value: 'studio', label: 'Estudio' },
+  { value: 'tab', label: 'Tablatura' },
   { value: 'control', label: 'Ajustes' }
 ];
 
@@ -99,6 +101,13 @@ export default function App() {
   const [switching, setSwitching] = useState(false);
   const [studioBusy, setStudioBusy] = useState(false);
   const [takesVersion, setTakesVersion] = useState(0);
+  const [tabRequest, setTabRequest] = useState<TabRequest | null>(null);
+
+  const sendToTab = (title: string, buffer: AudioBuffer, dry: boolean) => {
+    const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
+    setTabRequest((r) => ({ n: (r?.n ?? 0) + 1, title, channels, sampleRate: buffer.sampleRate, dry }));
+    update({ tab: 'tab' });
+  };
 
   // ── Control: acciones disparadas por teclado, MIDI o pedal Bluetooth ──
   const handlers = useRef(new Map<ActionId, ActionHandler>());
@@ -826,6 +835,11 @@ export default function App() {
           register={register}
           version={takesVersion}
           onReamp={reampTake}
+          onTab={async (rec) => {
+            if (!engine.ctx) return;
+            const buf = await engine.ctx.decodeAudioData(await rec.blob.arrayBuffer());
+            sendToTab(rec.name, buf, rec.source === 'dry' || !rec.source);
+          }}
           blocked={studioBusy}
           source={settings.recordSource}
           onSource={(s: RecordSource) => {
@@ -854,7 +868,12 @@ export default function App() {
           onTakeSaved={() => setTakesVersion((v) => v + 1)}
           theme={settings.theme}
           register={register}
+          onTab={sendToTab}
         />
+      </div>
+
+      <div className="layout" role="tabpanel" id="panel-tab" aria-labelledby="tab-tab" hidden={tab !== 'tab'}>
+        <TabTab engine={engine} active={tab === 'tab'} request={tabRequest} defaultTuning={settings.tuning} a4={settings.a4} />
       </div>
 
       <div className="layout" role="tabpanel" id="panel-control" aria-labelledby="tab-control" hidden={tab !== 'control'}>

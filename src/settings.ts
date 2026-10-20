@@ -3,7 +3,7 @@ import type { ChannelMode, RecordSource } from './audio/engine';
 import { DEFAULT_BINDINGS, type Bindings } from './control/actions';
 
 export type ThemeName = 'auto' | 'light' | 'dark' | 'ebook' | 'dire';
-export type TabName = 'audio' | 'board' | 'looper' | 'studio' | 'control';
+export type TabName = 'audio' | 'board' | 'looper' | 'studio' | 'tab' | 'control';
 
 export interface Settings {
   inputId: string;

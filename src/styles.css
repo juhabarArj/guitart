@@ -1835,3 +1835,161 @@ input[type='range'] {
     animation: none;
   }
 }
+
+/* Tablatura */
+.tab-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.tab-take {
+  width: auto;
+  max-width: 100%;
+}
+
+.tab-empty p {
+  margin: 0 0 0.5rem;
+}
+
+.tab-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 0 1rem;
+}
+
+.tab-settings input:not([type='range']) {
+  width: 100%;
+  color: var(--silk);
+  background: var(--plate-2);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-control);
+  padding: 0.5rem 0.6rem;
+}
+
+.tab-bpm {
+  display: flex !important;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.tab-bpm input[type='number'] {
+  width: 5rem !important;
+}
+
+.tab-transport {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0.25rem 0 0.75rem;
+}
+
+.tab-board {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0;
+  padding: 0.75rem 0.5rem;
+  border-radius: 12px;
+  background: var(--plate-2);
+  border: 1px solid var(--edge);
+}
+
+.tab-board:focus-visible {
+  outline-offset: 3px;
+}
+
+.tab-bar {
+  width: min(100%, 24rem);
+  height: auto;
+  cursor: pointer;
+  overflow: visible;
+}
+
+.tab-line {
+  stroke: var(--muted);
+  stroke-width: 0.8;
+  opacity: 0.6;
+}
+
+.tab-barline {
+  stroke: var(--silk);
+  stroke-width: 1.2;
+}
+
+.tab-beat {
+  stroke: var(--muted);
+  stroke-width: 1.2;
+}
+
+.tab-barnum,
+.tab-string-name {
+  fill: var(--muted);
+  font-size: 9px;
+  font-family: var(--font-body);
+}
+
+.tab-note rect {
+  fill: var(--plate-2);
+}
+
+.tab-note text {
+  fill: var(--silk);
+  font-family: var(--font-face);
+  font-weight: 700;
+  font-size: 13px;
+  text-anchor: middle;
+}
+
+.tab-dur {
+  stroke: var(--amber);
+  stroke-width: 3;
+  stroke-linecap: round;
+  opacity: 0.35;
+}
+
+.tab-note.selected rect {
+  fill: var(--amber);
+}
+
+.tab-note.selected text {
+  fill: var(--on-accent);
+}
+
+.tab-cursor {
+  stroke: var(--rec);
+  stroke-width: 2;
+}
+
+.tab-editor {
+  margin: 0.75rem 0;
+  min-height: 3.5rem;
+}
+
+.tab-editor p {
+  margin: 0 0 0.5rem;
+}
+
+.tab-editor-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+}
+
+.tab-editor-buttons .group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.tab-ascii {
+  overflow-x: auto;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: var(--steel);
+  color: var(--silk);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
