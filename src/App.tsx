@@ -16,7 +16,8 @@ import {
   savePreset,
   type Preset
 } from './presets';
-import { useSettings } from './settings';
+import { useSettings, type TabName } from './settings';
+import { ThemeSelect, useTheme } from './theme';
 import { decodeIr, deleteIr, getIr, listIrs, MAX_IR_BYTES, saveIr, type StoredIr } from './storage/irs';
 
 const BOARD_KEY = 'guitart:board';
@@ -43,6 +44,11 @@ function download(blob: Blob, filename: string) {
 
 type Phase = 'idle' | 'starting' | 'running';
 
+const TABS: { value: TabName; label: string }[] = [
+  { value: 'audio', label: 'Afinador y audio' },
+  { value: 'board', label: 'Pedalera y grabación' }
+];
+
 function describeError(e: unknown): string {
   const name = e instanceof DOMException ? e.name : '';
   switch (name) {
@@ -66,6 +72,8 @@ const CHANNELS: { value: ChannelMode; label: string }[] = [
 export default function App() {
   const engine = useRef(new AudioEngine()).current;
   const [settings, update] = useSettings();
+  useTheme(settings.theme);
+  const tab = settings.tab;
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [inputs, setInputs] = useState<MediaDeviceInfo[]>([]);
@@ -255,6 +263,9 @@ export default function App() {
   if (phase !== 'running') {
     return (
       <main className="intro">
+        <div className="intro-top">
+          <ThemeSelect value={settings.theme} onChange={(theme) => update({ theme })} />
+        </div>
         <h1 className="wordmark">Guitart</h1>
         <p className="lede">Afinador, amplificador, pedalera de efectos y grabación para tu guitarra, directamente en el navegador.</p>
         <button className="btn primary big" onClick={start} disabled={phase === 'starting'}>
@@ -274,8 +285,10 @@ export default function App() {
 
   return (
     <div className="app">
+      <div className="chrome">
       <header className="topbar">
         <h1 className="wordmark small">Guitart</h1>
+        <div className="topbar-right">
         {latency && (
           <dl className="status">
             <div>
@@ -288,12 +301,43 @@ export default function App() {
             </div>
           </dl>
         )}
+        <ThemeSelect value={settings.theme} onChange={(theme) => update({ theme })} />
+        </div>
       </header>
+
+      <nav className="tabs" role="tablist" aria-label="Secciones">
+        {TABS.map((t, i) => (
+          <button
+            key={t.value}
+            id={`tab-${t.value}`}
+            role="tab"
+            aria-selected={tab === t.value}
+            aria-controls={`panel-${t.value}`}
+            tabIndex={tab === t.value ? 0 : -1}
+            onClick={() => update({ tab: t.value })}
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+              const next = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length];
+              update({ tab: next.value });
+              document.getElementById(`tab-${next.value}`)?.focus();
+            }}
+          >
+            {t.label}
+            {t.value === 'board' && recording && (
+              <span className="tab-rec">
+                <span className="rec-dot" aria-hidden="true" />
+                Grabando
+              </span>
+            )}
+          </button>
+        ))}
+      </nav>
+      </div>
 
       {error && <p className="notice error">{error}</p>}
 
-      <div className="layout">
-        <Tuner engine={engine} a4={settings.a4} onA4={(a4) => update({ a4 })} />
+      <div className="layout audio" role="tabpanel" id="panel-audio" aria-labelledby="tab-audio" hidden={tab !== 'audio'}>
+        <Tuner engine={engine} a4={settings.a4} onA4={(a4) => update({ a4 })} active={tab === 'audio'} />
 
         <section className="panel input" aria-labelledby="input-title">
           <div className="panel-head">
@@ -343,7 +387,7 @@ export default function App() {
             />
           </label>
 
-          <LevelMeter engine={engine} />
+          <LevelMeter engine={engine} active={tab === 'audio'} />
         </section>
 
         <section className="panel monitor" aria-labelledby="monitor-title">
@@ -405,6 +449,9 @@ export default function App() {
           )}
         </section>
 
+      </div>
+
+      <div className="layout studio" role="tabpanel" id="panel-board" aria-labelledby="tab-board" hidden={tab !== 'board'}>
         <section className="panel board" aria-labelledby="board-title">
           <div className="panel-head wrap">
             <h2 id="board-title">Pedalera</h2>

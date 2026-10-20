@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { ChannelMode, RecordSource } from './audio/engine';
 
+export type ThemeName = 'auto' | 'light' | 'dark' | 'ebook' | 'dire';
+export type TabName = 'audio' | 'board';
+
 export interface Settings {
   inputId: string;
   outputId: string;
@@ -9,6 +12,8 @@ export interface Settings {
   monitorVolume: number;
   a4: number;
   recordSource: RecordSource;
+  theme: ThemeName;
+  tab: TabName;
 }
 
 const KEY = 'guitart:settings';
@@ -19,7 +24,9 @@ const DEFAULTS: Settings = {
   gainDb: 0,
   monitorVolume: 0.8,
   a4: 440,
-  recordSource: 'wet'
+  recordSource: 'wet',
+  theme: 'auto',
+  tab: 'audio'
 };
 
 export function useSettings() {

@@ -4,7 +4,14 @@ Estudio de guitarra en el navegador: afinador, simulador de amplificador, pedale
 
 **Demo:** https://juhabararj.github.io/guitart/
 
-## Fase 3 (esta versión)
+## Versión 0.4 (esta versión)
+
+- Pestañas: «Afinador y audio» y «Pedalera y grabación». La grabación continúa al cambiar de pestaña
+- Afinador, Entrada y Escucha en tres columnas en escritorio
+- Temas: Automático, Claro, Oscuro, eBook y Dire (paleta de la portada de «Money for Nothing»)
+- El afinador y el medidor se pausan con su pestaña oculta
+
+## Fase 3
 
 - Simulador de amplificador con 3 modelos (limpio, crunch y hi-gain): dos etapas de previo de válvula con sobremuestreo 4x, tonos, etapa de potencia y presencia
 - Pantalla por convolución: 1x12, 2x12 y 4x12 generadas por código, con micrófono al centro o al borde
@@ -74,5 +81,13 @@ src/components/                        Afinador, medidor y grabadora
 1. ~~MVP: entrada, monitor, afinador, grabación~~
 2. ~~Cadena de efectos reordenable y presets~~
 3. ~~Simulador de amplificador y cargador de IR~~
-4. Looper, metrónomo, caja de ritmos y multipista
-5. MIDI, pedal Bluetooth y presets compartibles
+4. **Audio y latencia.** Va antes del looper porque la latencia medida sirve para alinear las capas grabadas.
+   - Adoptar la frecuencia de muestreo de la interfaz para evitar el remuestreo
+   - Modo de latencia mínima (opcional)
+   - Medición real de la latencia con un clic de ida y vuelta
+   - Pantalla siempre encendida mientras se toca
+   - Afinaciones alternativas (Drop D, medio tono abajo…) y silencio de la salida al afinar
+   - Puerta de ruido autoajustable
+5. **Looper y estudio.** Looper, metrónomo con cuenta atrás, caja de ritmos, multipista y re-amp (aplicar la pedalera a una toma en seco)
+6. **Control.** MIDI, pedal Bluetooth, atajos de teclado y copia de seguridad completa de presets e IR
+7. **Futuro.** Modelos de amplificador neuronales (NAM) en WASM

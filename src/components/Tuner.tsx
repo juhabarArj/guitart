@@ -15,12 +15,21 @@ const polar = (deg: number, r: number) => {
 
 const TICKS = Array.from({ length: 21 }, (_, i) => -50 + i * 5);
 
-export function Tuner({ engine, a4, onA4 }: { engine: AudioEngine; a4: number; onA4: (v: number) => void }) {
+interface TunerProps {
+  engine: AudioEngine;
+  a4: number;
+  onA4: (v: number) => void;
+  /** Con la pestaña oculta no se analiza el tono (ahorra CPU y batería). */
+  active: boolean;
+}
+
+export function Tuner({ engine, a4, onA4, active }: TunerProps) {
   const [reading, setReading] = useState<NoteReading | null>(null);
   const history = useRef<number[]>([]);
   const lastSeen = useRef(0);
 
   useEffect(() => {
+    if (!active) return;
     const id = window.setInterval(() => {
       const f = engine.readPitch();
       const now = performance.now();
@@ -39,7 +48,7 @@ export function Tuner({ engine, a4, onA4 }: { engine: AudioEngine; a4: number; o
       setReading(noteFromFreq(median, a4));
     }, 60);
     return () => window.clearInterval(id);
-  }, [engine, a4]);
+  }, [engine, a4, active]);
 
   const cents = reading ? Math.max(-50, Math.min(50, reading.cents)) : 0;
   const inTune = reading != null && Math.abs(reading.cents) < 5;

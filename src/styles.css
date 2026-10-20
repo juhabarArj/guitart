@@ -1,5 +1,14 @@
 /* Guitart: carcasa de pedal en acero azulado, serigrafía crema y piloto ámbar. */
 :root {
+  --font-body: 'Barlow', system-ui, sans-serif;
+  --font-face: 'Barlow Condensed', 'Arial Narrow', system-ui, sans-serif;
+  --r-panel: 18px;
+  --r-control: 8px;
+}
+
+/* Oscuro: carcasa de pedal en acero azulado, serigrafía crema y piloto ámbar (por defecto) */
+:root,
+:root[data-theme='dark'] {
   color-scheme: dark;
   --steel: #1e262c;
   --plate: #27323a;
@@ -9,16 +18,14 @@
   --muted: #98a5ac;
   --amber: #f2b33d;
   --amber-dim: #6b5222;
+  --on-accent: #1e262c;
   --rec: #e8493c;
   --tuned: #5fd27d;
-  --font-body: 'Barlow', system-ui, sans-serif;
-  --font-face: 'Barlow Condensed', 'Arial Narrow', system-ui, sans-serif;
-  --r-panel: 18px;
-  --r-control: 8px;
 }
 
+/* Claro: el mismo acero, pintado en gris azulado claro */
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme]) {
     color-scheme: light;
     --steel: #d5dde1;
     --plate: #eef2f3;
@@ -28,9 +35,73 @@
     --muted: #55636b;
     --amber: #b0700a;
     --amber-dim: #e6cf9e;
+    --on-accent: #ffffff;
     --rec: #c63428;
     --tuned: #23894a;
   }
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --steel: #d5dde1;
+  --plate: #eef2f3;
+  --plate-2: #e2e8eb;
+  --edge: #b3c0c6;
+  --silk: #1e262c;
+  --muted: #55636b;
+  --amber: #b0700a;
+  --amber-dim: #e6cf9e;
+  --on-accent: #ffffff;
+  --rec: #c63428;
+  --tuned: #23894a;
+}
+
+/* eBook: papel cálido, tinta marrón y acentos apagados, para sesiones largas */
+:root[data-theme='ebook'] {
+  color-scheme: light;
+  --steel: #ece3cf;
+  --plate: #f6f0e2;
+  --plate-2: #efe6d3;
+  --edge: #d6c8aa;
+  --silk: #3d3428;
+  --muted: #7b6e5b;
+  --amber: #96693a;
+  --amber-dim: #dccaa6;
+  --on-accent: #fbf7ee;
+  --rec: #a8513d;
+  --tuned: #5d8550;
+  --pedal-mix: 55%;
+}
+
+/*
+ * Dire: paleta sacada de la portada de «Money for Nothing».
+ * Fondo negro azulado, superficies del azul de la chaqueta, acento naranja de la guitarra,
+ * magenta del logotipo y verde de los halos. Los colores vivos solo en detalles pequeños;
+ * las superficies grandes van apagadas para que no canse la vista.
+ */
+:root[data-theme='dire'] {
+  color-scheme: dark;
+  --steel: #07081a;
+  --plate: #11143a;
+  --plate-2: #181c4a;
+  --edge: #2c3577;
+  --silk: #f3e6f1;
+  --muted: #a0a5d8;
+  --amber: #f2733a;
+  --amber-dim: #5a2a1c;
+  --on-accent: #07081a;
+  --rec: #e0509b;
+  --tuned: #3fcf9a;
+  --brand: #e05aa8;
+  --pedal-mix: 85%;
+}
+
+:root[data-theme='dire'] .tuner[data-state='tuned'] .note-name {
+  text-shadow: 0 0 18px color-mix(in srgb, var(--tuned) 60%, transparent);
+}
+
+:root[data-theme='dire'] .tabs [role='tab'][aria-selected='true'] {
+  box-shadow: 0 6px 14px -10px var(--amber);
 }
 
 *,
@@ -84,10 +155,11 @@ input {
 .intro {
   max-width: 34rem;
   margin: 0 auto;
-  padding: clamp(3rem, 12vh, 7rem) 1.5rem 3rem;
+  padding: 1.25rem 1.5rem 3rem;
 }
 
 .wordmark {
+  color: var(--brand, var(--silk));
   font-family: var(--font-face);
   font-weight: 700;
   font-size: clamp(4.5rem, 18vw, 8.5rem);
@@ -135,7 +207,7 @@ input {
 .btn.primary {
   background: var(--amber);
   border-color: var(--amber);
-  color: #1e262c;
+  color: var(--on-accent);
   font-family: var(--font-face);
   font-weight: 600;
   font-size: 1.25rem;
@@ -161,9 +233,9 @@ button:disabled {
 
 /* Aplicación */
 .app {
-  max-width: 72rem;
+  max-width: 76rem;
   margin: 0 auto;
-  padding: 1rem clamp(1rem, 3vw, 2rem) 3rem;
+  padding: 0 clamp(1rem, 3vw, 2rem) 3rem;
 }
 
 .topbar {
@@ -172,7 +244,7 @@ button:disabled {
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
-  padding-bottom: 1rem;
+  padding-bottom: 0.5rem;
 }
 
 .status {
@@ -201,35 +273,96 @@ button:disabled {
 .layout {
   display: grid;
   gap: 1rem;
-  grid-template-columns: 1fr;
-  grid-template-areas: 'tuner' 'input' 'monitor' 'board' 'recorder';
 }
 
-@media (min-width: 900px) {
-  .layout {
-    grid-template-columns: 1.35fr 1fr;
-    grid-template-areas:
-      'tuner input'
-      'tuner monitor'
-      'board board'
-      'recorder recorder';
-  }
+.layout[hidden] {
+  display: none;
 }
 
-.tuner {
-  grid-area: tuner;
+/* Afinador, Entrada y Escucha en tres columnas cuando hay sitio */
+.layout.audio {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  align-items: start;
 }
-.input {
-  grid-area: input;
+
+/* Cabecera y pestañas fijas arriba al desplazarse */
+.chrome {
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 10;
+  background: var(--steel);
+  margin: 0 calc(-1 * clamp(1rem, 3vw, 2rem)) 1rem;
+  padding: 0.5rem clamp(1rem, 3vw, 2rem) 0;
+  border-bottom: 1px solid var(--edge);
 }
-.monitor {
-  grid-area: monitor;
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
 }
-.recorder {
-  grid-area: recorder;
+
+.theme-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.875rem;
 }
-.board {
-  grid-area: board;
+
+.theme-select select {
+  width: auto;
+  padding: 0.35rem 0.5rem;
+}
+
+.intro-top {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 2rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+}
+
+.tabs [role='tab'] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  padding: 0.6rem 1rem 0.55rem;
+  font-family: var(--font-face);
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tabs [role='tab'][aria-selected='true'] {
+  color: var(--silk);
+  border-bottom-color: var(--amber);
+}
+
+.tab-rec {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--rec);
+}
+
+.tab-rec .rec-dot {
+  width: 9px;
+  height: 9px;
+  animation: rec-pulse 1s ease-in-out infinite;
 }
 
 .panel {
@@ -300,7 +433,7 @@ input[type='range'] {
 
 .segmented button[aria-pressed='true'] {
   background: var(--amber);
-  color: #1e262c;
+  color: var(--on-accent);
   font-weight: 500;
 }
 
@@ -457,7 +590,7 @@ input[type='range'] {
 
 .gauge {
   width: 100%;
-  max-width: 460px;
+  max-width: 280px;
   margin: 0 auto;
   display: block;
 }
@@ -522,7 +655,7 @@ input[type='range'] {
   display: block;
   font-family: var(--font-face);
   font-weight: 700;
-  font-size: clamp(5rem, 16vw, 8rem);
+  font-size: clamp(3.5rem, 9vw, 5rem);
   line-height: 1;
   letter-spacing: -0.02em;
 }
@@ -537,7 +670,10 @@ input[type='range'] {
 
 .note-sub {
   display: inline-flex;
-  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.25rem 0.8rem;
+  font-size: 0.9375rem;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   min-height: 1.5em;
@@ -550,7 +686,7 @@ input[type='range'] {
 .strings {
   list-style: none;
   padding: 0;
-  margin: 1.5rem 0 0;
+  margin: 1rem 0 0;
   display: grid;
   grid-template-columns: repeat(6, 1fr);
   gap: 0.4rem;
@@ -646,15 +782,19 @@ input[type='range'] {
   user-select: none;
 }
 
-[data-pedal='gate'] { --pedal: #8a9ba5; }
-[data-pedal='comp'] { --pedal: #4fb0a8; }
-[data-pedal='drive'] { --pedal: #e39b2d; }
-[data-pedal='amp'] { --pedal: #d0605e; }
-[data-pedal='cab'] { --pedal: #b49a6c; }
-[data-pedal='eq'] { --pedal: #c9bfa4; }
-[data-pedal='chorus'] { --pedal: #6f95e0; }
-[data-pedal='delay'] { --pedal: #a184dc; }
-[data-pedal='reverb'] { --pedal: #57b4d6; }
+[data-pedal] {
+  --pedal: color-mix(in srgb, var(--pedal-raw) var(--pedal-mix, 100%), var(--muted));
+}
+
+[data-pedal='gate'] { --pedal-raw: #8a9ba5; }
+[data-pedal='comp'] { --pedal-raw: #4fb0a8; }
+[data-pedal='drive'] { --pedal-raw: #e39b2d; }
+[data-pedal='amp'] { --pedal-raw: #d0605e; }
+[data-pedal='cab'] { --pedal-raw: #b49a6c; }
+[data-pedal='eq'] { --pedal-raw: #c9bfa4; }
+[data-pedal='chorus'] { --pedal-raw: #6f95e0; }
+[data-pedal='delay'] { --pedal-raw: #a184dc; }
+[data-pedal='reverb'] { --pedal-raw: #57b4d6; }
 
 .pedal {
   display: flex;
@@ -942,5 +1082,33 @@ input[type='range'] {
   }
   .rec-button.is-recording .rec-dot {
     animation: none;
+  }
+}
+
+/* Cabecera compacta en móvil para dejar más pantalla al contenido */
+@media (max-width: 600px) {
+  .topbar {
+    flex-wrap: nowrap;
+  }
+  .wordmark.small {
+    font-size: 1.75rem;
+  }
+  .topbar-right {
+    gap: 0.75rem;
+    flex-wrap: nowrap;
+  }
+  .status {
+    gap: 0.75rem;
+  }
+  .status dt,
+  .theme-select span {
+    display: none;
+  }
+  .status dd {
+    font-size: 1rem;
+  }
+  .tabs [role='tab'] {
+    font-size: 1.05rem;
+    padding: 0.5rem 0.75rem;
   }
 }

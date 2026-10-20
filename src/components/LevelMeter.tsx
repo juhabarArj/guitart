@@ -5,11 +5,12 @@ const FLOOR = -60;
 const pct = (db: number) => Math.max(0, Math.min(1, (db - FLOOR) / -FLOOR)) * 100;
 const MARKS = [-48, -36, -24, -12, -6, 0];
 
-export function LevelMeter({ engine }: { engine: AudioEngine }) {
+export function LevelMeter({ engine, active }: { engine: AudioEngine; active: boolean }) {
   const bar = useRef<HTMLDivElement>(null);
   const readout = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
+    if (!active) return;
     let raf = 0;
     let hold = -Infinity;
     let holdAt = 0;
@@ -37,7 +38,7 @@ export function LevelMeter({ engine }: { engine: AudioEngine }) {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [engine]);
+  }, [engine, active]);
 
   return (
     <div className="meter">
