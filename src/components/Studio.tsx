@@ -7,6 +7,7 @@ import { encodeWav } from '../audio/wav';
 import { useAction, type Register } from '../control/registry';
 import { listRecordings, saveRecording, type Recording } from '../storage/recordings';
 import { loadProject, saveProject } from '../storage/studio';
+import type { StudioImport } from './SeparationPanel';
 
 interface Props {
   engine: AudioEngine;
@@ -20,7 +21,11 @@ interface Props {
   theme: string;
   register: Register;
   onTab: (title: string, buffer: AudioBuffer, dry: boolean) => void;
+  /** Instrumentos separados de una canción para crear un proyecto */
+  importRequest: StudioImport | null;
 }
+
+const MAX_TRACKS = 8;
 
 type Mode = 'idle' | 'playing' | 'recording' | 'working';
 
@@ -43,9 +48,9 @@ const clock = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padSta
 const PREFS_KEY = 'guitart:studio';
 function loadPrefs() {
   try {
-    return { useTempo: false, countIn: 1, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') };
+    return { useTempo: false, countIn: 1, offset: 0, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') };
   } catch {
-    return { useTempo: false, countIn: 1 };
+    return { useTempo: false, countIn: 1, offset: 0 };
   }
 }
 
@@ -96,7 +101,7 @@ function drawLane(canvas: HTMLCanvasElement, track: StudioTrack, total: number) 
   }
 }
 
-export function Studio({ engine, active, latencyMs, busy, onBusy, board, irLoaderFor, onTakeSaved, theme, register, onTab }: Props) {
+export function Studio({ engine, active, latencyMs, busy, onBusy, board, irLoaderFor, onTakeSaved, theme, register, onTab, importRequest }: Props) {
   const [tracks, setTracks] = useState<StudioTrack[]>(() => [1, 2, 3, 4].map(newTrack));
   const [loaded, setLoaded] = useState(false);
   const [armed, setArmed] = useState<string | null>(null);
@@ -139,6 +144,32 @@ export function Studio({ engine, active, latencyMs, busy, onBusy, board, irLoade
 
   useEffect(() => engine.studio.updateMix(tracks), [engine, tracks]);
 
+  // Proyecto nuevo con los instrumentos separados de una canción
+  const lastImport = useRef(0);
+  useEffect(() => {
+    if (!importRequest || importRequest.n === lastImport.current || !loaded) return;
+    lastImport.current = importRequest.n;
+    if (tracksRef.current.some((t) => t.audio) && !window.confirm('El proyecto del Estudio se sustituirá por los instrumentos de la canción. ¿Continuar?')) return;
+    engine.studio.stop();
+    const imported: StudioTrack[] = importRequest.stems.map((x, i) => ({
+      ...newTrack(i + 1),
+      name: x.name,
+      audio: x.buffer,
+      lossy: true
+    }));
+    const mine: StudioTrack = { ...newTrack(imported.length + 1), name: 'Mi guitarra' };
+    setTracks([...imported, mine]);
+    setArmed(mine.id);
+    setPos(0);
+    setPrefs({ offset: importRequest.offset });
+    if (importRequest.bpm) window.dispatchEvent(new CustomEvent('guitart:set-bpm', { detail: importRequest.bpm }));
+    setMessage(
+      `Proyecto creado con «${importRequest.name}». Silencia (M) el instrumento que quieras tocar tú y graba en «Mi guitarra».` +
+        (importRequest.bpm ? ` Con «Tocar con el tempo», el metrónomo va a ${importRequest.bpm} BPM alineado con la canción.` : '')
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importRequest, loaded]);
+
   const end = Math.max(0, ...tracks.filter((t) => t.audio).map((t) => t.start + t.audio!.duration));
   const total = Math.max(20, Math.ceil(end + 4));
 
@@ -179,7 +210,8 @@ export function Studio({ engine, active, latencyMs, busy, onBusy, board, irLoade
     const ctx = engine.ctx;
     if (!ctx) return;
     const at = ctx.currentTime + 0.1;
-    if (prefs.useTempo) engine.transport.run(at - pos, 0);
+    // El compás 1 del proyecto empieza en «offset» segundos (en canciones importadas, su primer tiempo)
+    if (prefs.useTempo) engine.transport.run(at - pos + (prefs.offset ?? 0), 0);
     engine.studio.play(tracks, pos, at);
     setMode('playing');
   };
@@ -193,7 +225,7 @@ export function Studio({ engine, active, latencyMs, busy, onBusy, board, irLoade
     const at = ctx.currentTime + 0.15 + countIn;
     const prevSource = engine.recordSource;
     engine.setRecordSource(track.source);
-    if (prefs.useTempo) engine.transport.run(at - pos, at);
+    if (prefs.useTempo) engine.transport.run(at - pos + (prefs.offset ?? 0), at);
     engine.startRecording(at);
     engine.studio.play(tracks, pos, at, track.id);
     recInfo.current = { trackId: track.id, startPos: pos, source: track.source, prevSource };
@@ -359,6 +391,13 @@ export function Studio({ engine, active, latencyMs, busy, onBusy, board, irLoade
             <option value={2}>2 compases</option>
           </select>
         </label>
+        <button
+          className="btn"
+          disabled={!idle || tracks.length >= MAX_TRACKS}
+          onClick={() => setTracks((ts) => [...ts, newTrack(ts.length + 1)])}
+        >
+          Añadir pista
+        </button>
         <button className="btn" onClick={exportMix} disabled={!idle || !hasAudio}>
           Exportar mezcla (WAV)
         </button>
@@ -394,6 +433,21 @@ export function Studio({ engine, active, latencyMs, busy, onBusy, board, irLoade
                 <button className={`toggle${t.solo ? ' on' : ''}`} aria-pressed={t.solo} onClick={() => update(t.id, { solo: !t.solo })} title="Solo">
                   S
                 </button>
+                {tracks.length > 1 && (
+                  <button
+                    className="toggle"
+                    disabled={!idle}
+                    title="Quitar la pista"
+                    aria-label={`Quitar ${t.name}`}
+                    onClick={() => {
+                      if (t.audio && !window.confirm(`¿Quitar «${t.name}» con su audio?`)) return;
+                      setTracks((ts) => ts.filter((x) => x.id !== t.id));
+                      if (armed === t.id) setArmed(null);
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
               </div>
               <div className="track-row sliders">
                 <label>

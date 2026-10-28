@@ -2,7 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import type { AudioEngine } from '../audio/engine';
 import { encodeWav } from '../audio/wav';
 import { MODEL_MB, MODEL_URL, SEP_RATE, Separator, STEM_NAMES, type Stem, type StemId } from '../separate/separator';
-import type { Song } from '../storage/songs';
+import { packAudio, packedSize, unpackAudio } from '../storage/codec';
+import { saveSong, type Song } from '../storage/songs';
+import { analyzeOnsets, estimateBeatOffset, estimateBpmFromTimes, strongOnsetSeconds, toMono } from '../tab/transcribe';
+
+export interface StudioImport {
+  n: number;
+  name: string;
+  stems: { name: string; buffer: AudioBuffer }[];
+  bpm: number | null;
+  offset: number;
+}
 
 type Phase = 'idle' | 'loading' | 'separating' | 'done' | 'error';
 interface Track {
@@ -18,13 +28,24 @@ const mmss = (s: number) => `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`;
 
 const separator = new Separator();
 
-export function SeparationPanel({ engine, song }: { engine: AudioEngine; song: Song }) {
+interface Props {
+  engine: AudioEngine;
+  song: Song;
+  onSongUpdate: (s: Song) => void;
+  onToStudio: (req: Omit<StudioImport, 'n'>) => void;
+}
+
+export function SeparationPanel({ engine, song, onSongUpdate, onToStudio }: Props) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [msg, setMsg] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [cached, setCached] = useState<boolean | null>(null);
   const [stats, setStats] = useState<{ seconds: number; audio: number; gpu: boolean; threads: number } | null>(null);
   const [stems, setStems] = useState<Stem[] | null>(null);
+  const [stemRate, setStemRate] = useState(SEP_RATE);
+  const [savedInfo, setSavedInfo] = useState<string | null>(null);
+  const songRef = useRef(song);
+  songRef.current = song;
   const [mix, setMix] = useState<Record<StemId, Track>>(fresh);
   const [usingMix, setUsingMix] = useState(false);
   const modelFile = useRef<HTMLInputElement>(null);
@@ -39,14 +60,71 @@ export function SeparationPanel({ engine, song }: { engine: AudioEngine; song: S
     else nav.gpu.requestAdapter().then((a) => setGpuHere(!!a)).catch(() => setGpuHere(false));
   }, []);
 
-  // Las pistas pertenecen a la canción: al cambiar de canción se descartan
+  // Las pistas pertenecen a la canción: al cambiar de canción se cargan las guardadas (si las hay)
   useEffect(() => {
     setStems(null);
     setStats(null);
+    setSavedInfo(null);
     setPhase('idle');
     setMix(fresh());
     setUsingMix(false);
+    const saved = song.stems;
+    if (!saved?.length || !engine.ctx) return;
+    let cancelled = false;
+    setMsg('Cargando las pistas separadas guardadas…');
+    Promise.all(saved.map(async (x) => ({ id: x.id, buf: await unpackAudio(x.audio, engine.ctx!) })))
+      .then((list) => {
+        if (cancelled) return;
+        setStems(list.map(({ id, buf }) => ({ id, left: buf.getChannelData(0), right: buf.getChannelData(buf.numberOfChannels > 1 ? 1 : 0) })));
+        setStemRate(list[0].buf.sampleRate);
+        const mbTotal = saved.reduce((n, x) => n + packedSize(x.audio), 0) / 1024 / 1024;
+        setSavedInfo(`Pistas guardadas de una separación anterior (${mbTotal.toFixed(1)} MB).`);
+        setPhase('done');
+        setMsg(null);
+      })
+      .catch(() => !cancelled && setMsg('No se han podido leer las pistas guardadas. Vuelve a separar la canción.'));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [song.id]);
+
+  /** Tras separar: muestra el mezclador, calcula el tempo con la batería y guarda las pistas comprimidas. */
+  const finish = async (result: Stem[], rate: number, seconds: number | null, backend: { gpu: boolean; threads: number } | null) => {
+    const audioSeconds = result[0].left.length / rate;
+    if (seconds != null && backend) setStats({ seconds, audio: audioSeconds, ...backend });
+    setStems(result);
+    setStemRate(rate);
+    setMix(fresh());
+    setUsingMix(true);
+    setPhase('done');
+    try {
+      setMsg('Calculando el tempo con la batería…');
+      const drums = result.find((x) => x.id === 'drums')!;
+      const onsets = strongOnsetSeconds(await analyzeOnsets(toMono([drums.left, drums.right]), rate, 0.5), rate);
+      const bpm = onsets.length >= 8 ? estimateBpmFromTimes(onsets) : songRef.current.bpm;
+      const tempoOffset = bpm ? estimateBeatOffset(onsets, bpm) : 0;
+      setMsg('Guardando las pistas comprimidas…');
+      const packed = [];
+      for (const x of result) packed.push({ id: x.id, audio: await packAudio([x.left, x.right], rate) });
+      const next: Song = { ...songRef.current, stems: packed, bpm: bpm ?? songRef.current.bpm, tempoOffset };
+      await saveSong(next);
+      onSongUpdate(next);
+      const mbTotal = packed.reduce((n, x) => n + packedSize(x.audio), 0) / 1024 / 1024;
+      setSavedInfo(`Pistas guardadas (${mbTotal.toFixed(1)} MB). Tempo según la batería: ${bpm ?? '—'} BPM.`);
+      setMsg(null);
+    } catch {
+      setMsg('Las pistas no se han podido guardar (¿falta espacio?). Se pueden usar hasta que cambies de canción.');
+    }
+  };
+
+  // Modo depuración (?debug): permite probar todo el flujo sin el modelo, con pistas generadas
+  useEffect(() => {
+    if (!new URLSearchParams(location.search).has('debug')) return;
+    const w = window as unknown as { __guitartStems?: unknown; __guitartCodec?: unknown };
+    w.__guitartStems = (list: Stem[], rate: number) => finish(list, rate, 1, { gpu: false, threads: 1 });
+    w.__guitartCodec = { packAudio, unpackAudio };
+  });
 
   // Mezcla según silencio, solo y volumen, y se cambia en el reproductor sin perder la posición
   useEffect(() => {
@@ -65,10 +143,10 @@ export function SeparationPanel({ engine, song }: { engine: AudioEngine; song: S
           R[i] += s.right[i] * g;
         }
       }
-      engine.song.swap(encodeWav([L, R], SEP_RATE, 16));
+      engine.song.swap(encodeWav([L, R], stemRate, 16));
     }, 250);
     return () => window.clearTimeout(id);
-  }, [mix, stems, usingMix, engine]);
+  }, [mix, stems, usingMix, engine, stemRate]);
 
   const run = async (source?: ArrayBuffer) => {
     if (!engine.ctx) return;
@@ -105,12 +183,7 @@ export function SeparationPanel({ engine, song }: { engine: AudioEngine; song: S
       started.current = performance.now();
       const result = await separator.separate(new Float32Array(st.getChannelData(0)), new Float32Array(st.getChannelData(1)));
       const seconds = (performance.now() - started.current) / 1000;
-      setStats({ seconds, audio: decoded.duration, ...backend });
-      setStems(result);
-      setMix(fresh());
-      setUsingMix(true);
-      setPhase('done');
-      setMsg(null);
+      await finish(result, SEP_RATE, seconds, backend);
     } catch (e) {
       setPhase('error');
       const text = e instanceof Error ? e.message : String(e);
@@ -192,13 +265,16 @@ export function SeparationPanel({ engine, song }: { engine: AudioEngine; song: S
         </div>
       )}
 
-      {phase === 'done' && stems && stats && (
+      {phase === 'done' && stems && (
         <>
+          {savedInfo && <p className="hint">{savedInfo}</p>}
+          {stats && (
           <p className="notice">
             Separada en {mmss(stats.seconds)} para {mmss(stats.audio)} de canción (
             {speed >= 1 ? `${speed.toFixed(1)} veces más rápido que el tiempo real` : `${(1 / speed).toFixed(1)} veces el tiempo real`}
             ), {stats.gpu ? 'con aceleración gráfica' : `sin aceleración gráfica, ${stats.threads} ${stats.threads === 1 ? 'hilo' : 'hilos'}`}.
           </p>
+          )}
           <div className="stems">
             {ORDER.map((id) => (
               <div key={id} className="stem-row">
@@ -242,6 +318,28 @@ export function SeparationPanel({ engine, song }: { engine: AudioEngine; song: S
             >
               Volver a la canción original
             </button>
+            <button
+              className="btn small primary-soft"
+              onClick={() => {
+                const ctx = engine.ctx;
+                if (!ctx) return;
+                const toBuffer = (x: Stem) => {
+                  const b = ctx.createBuffer(2, x.left.length, stemRate);
+                  b.copyToChannel(new Float32Array(x.left), 0);
+                  b.copyToChannel(new Float32Array(x.right), 1);
+                  return b;
+                };
+                onToStudio({
+                  name: song.name,
+                  stems: ORDER.map((id) => ({ name: STEM_NAMES[id].split(' (')[0], buffer: toBuffer(stems.find((x) => x.id === id)!) })),
+                  bpm: song.bpm,
+                  offset: song.tempoOffset ?? 0
+                });
+              }}
+              title="Crea un proyecto en el Estudio con una pista por instrumento y una pista para grabar tu guitarra"
+            >
+              Llevar al Estudio
+            </button>
             <button className="btn small ghost" onClick={() => run()}>
               Separar otra vez
             </button>
@@ -250,8 +348,8 @@ export function SeparationPanel({ engine, song }: { engine: AudioEngine; song: S
             </button>
           </div>
           <p className="hint">
-            La velocidad y el bucle siguen funcionando con la mezcla. En esta prueba las pistas no se guardan: al cambiar de
-            canción o recargar hay que volver a separar.
+            La velocidad y el bucle siguen funcionando con la mezcla. Las pistas se guardan comprimidas con la canción: la
+            próxima vez se cargan sin volver a separar.
           </p>
         </>
       )}

@@ -87,6 +87,8 @@ export interface OnsetAnalysis {
   onsets: number[];
   rms: Float32Array;
   maxRms: number;
+  /** Intensidad de cada ataque (flujo espectral), en el mismo orden que onsets */
+  strength: number[];
 }
 
 /** Ataques por flujo espectral con umbral adaptativo (sirve para notas y para el tempo de una canción). */
@@ -156,7 +158,13 @@ export async function analyzeOnsets(
     if (peak && loud && (!onsets.length || f - onsets[onsets.length - 1] >= minGap)) onsets.push(f);
   }
 
-  return { frames, onsets, rms, maxRms };
+  return { frames, onsets, rms, maxRms, strength: onsets.map((f) => flux[f]) };
+}
+
+/** Instantes (s) de los ataques fuertes: para el tempo conviene ignorar los golpes débiles y los ecos. */
+export function strongOnsetSeconds(a: OnsetAnalysis, sr: number, ratio = 0.35): number[] {
+  const max = Math.max(...a.strength, 1e-9);
+  return a.onsets.filter((_, i) => a.strength[i] >= max * ratio).map((f) => (f * HOP + HOP) / sr);
 }
 
 /** Instantes (s) de los ataques. */
@@ -332,22 +340,59 @@ export function estimateBpmFromTimes(input: number[]): number {
   for (const t of [...input].sort((a, b) => a - b)) if (!times.length || t - times[times.length - 1] > 0.05) times.push(t);
   if (times.length < 4) return 100;
   const t0 = times[0];
+  const span = times[times.length - 1] - t0;
   let best = 100;
   let bestScore = Infinity;
   for (let bpm = 60; bpm <= 180; bpm += 0.5) {
-    const sd = 60 / bpm / 2;
+    const beat = 60 / bpm;
+    const sd = beat / 2;
+    // 1) Los ataques deben caer en la rejilla de corcheas (error en fracción de corchea)
     let err = 0;
-    // Error medido en segundos (no en fracción de rejilla), para no castigar los tempos rápidos
     for (const t of times) {
       const q = (t - t0) / sd;
-      err += Math.abs(q - Math.round(q)) * sd;
+      err += Math.abs(q - Math.round(q));
     }
+    // 2) Y los pulsos deben estar "ocupados": un tempo el doble de rápido deja la mitad de pulsos vacíos
+    let hit = 0;
+    let beats = 0;
+    for (let bt = t0; bt <= t0 + span; bt += beat) {
+      beats++;
+      if (times.some((t) => Math.abs(t - bt) < 0.045)) hit++;
+    }
+    const coverage = beats ? hit / beats : 0;
     // Ligera preferencia por tempos medios para evitar el doble o la mitad
-    const score = err / times.length + Math.abs(bpm - 110) / 20000;
+    const score = (err / times.length) * 0.6 + (1 - coverage) * 0.4 + Math.abs(bpm - 110) / 2000;
     if (score < bestScore) {
       bestScore = score;
       best = bpm;
     }
   }
   return Math.round(best);
+}
+
+/**
+ * Desfase del primer tiempo: el instante (entre 0 y un pulso) en que la rejilla de corcheas a este
+ * tempo encaja mejor con los ataques. Sirve para alinear metrónomo y compases con una canción.
+ */
+export function estimateBeatOffset(times: number[], bpm: number): number {
+  const beat = 60 / bpm;
+  const eighth = beat / 2;
+  let best = 0;
+  let bestErr = Infinity;
+  for (let off = 0; off < beat; off += 0.005) {
+    let err = 0;
+    let onBeat = 0;
+    for (const t of times) {
+      const q = (t - off) / eighth;
+      err += Math.abs(q - Math.round(q));
+      // Desempate: los golpes fuertes suelen caer en el pulso, no a contratiempo
+      if (Math.round(q) % 2 === 0) onBeat++;
+    }
+    const score = err - onBeat * 0.02;
+    if (score < bestErr) {
+      bestErr = score;
+      best = off;
+    }
+  }
+  return Math.round(best * 1000) / 1000;
 }

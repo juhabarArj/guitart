@@ -4,7 +4,17 @@ Estudio de guitarra en el navegador: afinador, simulador de amplificador, pedale
 
 **Demo:** https://juhabararj.github.io/guitart/
 
-## Canciones, etapa 2: prueba de separación (esta versión, 1.4)
+## Canciones, etapa 3 (esta versión, 1.5)
+
+- Las pistas separadas se guardan con la canción, comprimidas en Opus con WebCodecs (unas 40 veces menos espacio) y alineadas a la muestra; si el navegador no tiene WebCodecs, en PCM de 16 bits
+- Al abrir una canción ya separada, las pistas se cargan sin volver a separar
+- Tempo y primer tiempo calculados con la pista de batería
+- «Metrónomo al compás de la canción»: metrónomo, batería y looper siguen a la canción, también al cambiar la velocidad o en el bucle
+- «Llevar al Estudio»: proyecto con una pista por instrumento y otra para grabar tu guitarra, con el compás alineado con la canción
+- Estudio con pistas dinámicas (hasta 8): añadir y quitar pistas
+- Tempo de canciones más fiable: solo cuentan los ataques fuertes y se valora que los pulsos estén ocupados
+
+## Canciones, etapa 2: prueba de separación (1.4)
 
 - En el reproductor, «Separar instrumentos»: batería, bajo, voz y resto, con el modelo Demucs dentro del navegador (la canción no sale del equipo)
 - Funciona en un hilo aparte (Web Worker) con aceleración gráfica WebGPU si está disponible y, si no, con el procesador
@@ -148,6 +158,7 @@ src/tab/                               Transcripción, digitación, tablatura de
 src/audio/song.ts                      Reproductor de canciones (velocidad y bucle A-B)
 src/storage/songs.ts                   Canciones guardadas en el navegador
 src/separate/                          Separación de instrumentos (hilo aparte con Demucs y ONNX Runtime)
+src/storage/codec.ts                   Compresión Opus de pistas largas (WebCodecs)
 src/audio/engine.ts                    Grafo de audio (entrada, canal, ganancia, pedalera, monitor, captura)
 src/audio/effects.ts                   Definición y procesado de cada pedal
 src/audio/chain.ts                     Cadena de efectos y estado de la pedalera
@@ -168,7 +179,7 @@ src/components/                        Afinador, medidor y grabadora
 5. ~~Looper y estudio: looper, metrónomo, caja de ritmos, multipista y re-amp~~
 6. ~~Control: MIDI, pedal Bluetooth, atajos de teclado y copia de seguridad~~
 7. **Tablatura.** ~~Etapas 1, 2, 4, 5 y 6~~. Pendiente: etapa 3, exportar a MusicXML y guardar varias tablaturas
-8. **Canciones.** ~~Etapa 1: reproductor con bucle A-B, velocidad y tempo~~. ~~2 prueba de separación en el navegador~~. Pendiente: medir la velocidad en un equipo real; 3 pistas separadas en el Estudio con silenciar y solo; 4 tablatura desde una pista separada; 5 opcionales (servidor local, transportar el tono, tablatura de batería)
+8. **Canciones.** ~~Etapa 1: reproductor con bucle A-B, velocidad y tempo~~. ~~2 prueba de separación en el navegador~~, ~~3 pistas separadas guardadas y en el Estudio~~. Pendiente: medir la velocidad en un equipo real; 4 tablatura desde una pista separada; 5 opcionales (servidor local, transportar el tono, tablatura de batería)
 9. **Futuro.** Presets por enlace, modelos de amplificador neuronales (NAM) en WASM y conservar el bucle del looper al reconstruir el motor
 
 ## Componentes de terceros

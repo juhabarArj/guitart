@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { AudioEngine } from '../audio/engine';
 import { useAction, type Register } from '../control/registry';
 import { deleteSong, listSongs, saveSong, type Song } from '../storage/songs';
-import { SeparationPanel } from './SeparationPanel';
-import { analyzeOnsets, estimateBpmFromTimes, onsetSeconds, toMono } from '../tab/transcribe';
+import { SeparationPanel, type StudioImport } from './SeparationPanel';
+import { analyzeOnsets, estimateBpmFromTimes, strongOnsetSeconds, toMono } from '../tab/transcribe';
 
 const MAX_MB = 60;
 const clock = (s: number) => `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
@@ -22,7 +22,15 @@ function peaksOf(buf: AudioBuffer, columns = 800): number[] {
   return out.map((p) => p / max);
 }
 
-export function SongsTab({ engine, active, register, theme }: { engine: AudioEngine; active: boolean; register: Register; theme: string }) {
+interface SongsTabProps {
+  engine: AudioEngine;
+  active: boolean;
+  register: Register;
+  theme: string;
+  onToStudio: (req: Omit<StudioImport, 'n'>) => void;
+}
+
+export function SongsTab({ engine, active, register, theme, onToStudio }: SongsTabProps) {
   const [songs, setSongs] = useState<Song[]>([]);
   const [current, setCurrent] = useState<Song | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -35,6 +43,8 @@ export function SongsTab({ engine, active, register, theme }: { engine: AudioEng
   const timeRef = useRef<HTMLSpanElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const drag = useRef<{ x0: number; t0: number; moved: boolean } | null>(null);
+  const [metroSync, setMetroSync] = useState(false);
+  const lastTime = useRef(0);
 
   useEffect(() => {
     listSongs().then(setSongs).catch(() => setStatus('No se pueden leer las canciones guardadas.'));
@@ -77,7 +87,7 @@ export function SongsTab({ engine, active, register, theme }: { engine: AudioEng
       // Para el tempo bastan los primeros 90 segundos
       const mono = toMono(Array.from({ length: buf.numberOfChannels }, (_, c) => buf.getChannelData(c).subarray(0, buf.sampleRate * 90)));
       const onsets = await analyzeOnsets(mono, buf.sampleRate, 0.4);
-      const times = onsetSeconds(onsets, buf.sampleRate);
+      const times = strongOnsetSeconds(onsets, buf.sampleRate);
       const song: Song = {
         id: crypto.randomUUID(),
         name: file.name.replace(/\.[^.]+$/, '').slice(0, 80),
@@ -125,6 +135,33 @@ export function SongsTab({ engine, active, register, theme }: { engine: AudioEng
   };
 
   const toStart = () => engine.song.seek(loop.on ? loop.a : 0);
+
+  /**
+   * Metrónomo, batería y looper al compás de la canción: el reloj de tempo arranca con el primer tiempo
+   * de la canción alineado con lo que suena, al tempo de la velocidad elegida.
+   */
+  const resync = () => {
+    const ctx = engine.ctx;
+    const bpmNow = current?.bpm;
+    if (!ctx || !bpmNow || !metroSync || !engine.song.playing) return;
+    const r = engine.song.loaded ? rate : 1;
+    const t = engine.song.time;
+    const zero = ctx.currentTime - (t - (current?.tempoOffset ?? 0)) / r;
+    const target = Math.round(bpmNow * r);
+    window.dispatchEvent(new CustomEvent('guitart:set-bpm', { detail: target }));
+    engine.transport.update({ bpm: bpmNow * r });
+    engine.transport.run(zero, 0);
+  };
+
+  useEffect(() => {
+    if (metroSync && playing) resync();
+    else if (!playing && metroSync) engine.transport.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metroSync, playing, rate, current?.bpm, current?.tempoOffset]);
+
+  useEffect(() => () => {
+    if (metroSync) engine.transport.stop();
+  }, [metroSync, engine]);
 
   useAction(register, 'song.play', () => {
     if (!current) return 'Elige una canción en la pestaña Canciones';
@@ -179,6 +216,9 @@ export function SongsTab({ engine, active, register, theme }: { engine: AudioEng
     let raf = 0;
     const tick = () => {
       const t = engine.song.time;
+      // Un salto (vuelta del bucle o clic en la onda) descoloca el compás: se vuelve a alinear
+      if (metroSync && engine.song.playing && (t < lastTime.current - 0.05 || t > lastTime.current + 0.5)) resync();
+      lastTime.current = t;
       if (head.current) head.current.style.left = `${Math.min(100, (t / current.duration) * 100)}%`;
       if (timeRef.current) timeRef.current.textContent = `${clockTenths(t)} / ${clock(current.duration)}`;
       if (engine.song.playing !== playing) setPlaying(engine.song.playing);
@@ -186,7 +226,8 @@ export function SongsTab({ engine, active, register, theme }: { engine: AudioEng
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [active, current, engine, playing]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, current, engine, playing, metroSync, rate]);
 
   const timeAt = (e: React.PointerEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -408,6 +449,16 @@ export function SongsTab({ engine, active, register, theme }: { engine: AudioEng
                   </button>
                 </span>
                 <small className="hint">El tempo es una estimación: si sale el doble o la mitad, corrígelo con ÷2 o ×2.</small>
+                <label className="check inline-check">
+                  <input type="checkbox" checked={metroSync} disabled={!bpm} onChange={(e) => setMetroSync(e.target.checked)} />
+                  <span>
+                    Metrónomo al compás de la canción
+                    <small>
+                      El metrónomo, la batería y el looper siguen a la canción mientras suena, también al cambiar la velocidad o
+                      en el bucle. Ajústalos en la pestaña Looper y ritmo.
+                    </small>
+                  </span>
+                </label>
               </div>
               <label className="field">
                 <span>
@@ -427,7 +478,15 @@ export function SongsTab({ engine, active, register, theme }: { engine: AudioEng
                 />
               </label>
             </div>
-            <SeparationPanel engine={engine} song={current} />
+            <SeparationPanel
+              engine={engine}
+              song={current}
+              onSongUpdate={(next) => {
+                setCurrent(next);
+                setSongs((l) => l.map((x) => (x.id === next.id ? next : x)));
+              }}
+              onToStudio={onToStudio}
+            />
           </>
         )}
       </section>

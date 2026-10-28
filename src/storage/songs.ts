@@ -1,4 +1,5 @@
 // Canciones para practicar, guardadas tal cual (MP3, M4A…) en este navegador.
+import type { PackedAudio } from './codec';
 import { run } from './db';
 
 export interface Song {
@@ -13,6 +14,10 @@ export interface Song {
   /** Último bucle y velocidad usados con esta canción */
   loop?: { a: number; b: number; on: boolean };
   rate?: number;
+  /** Segundo en que cae el primer tiempo (para alinear el metrónomo con la canción) */
+  tempoOffset?: number;
+  /** Instrumentos separados, comprimidos */
+  stems?: { id: 'drums' | 'bass' | 'vocals' | 'other'; audio: PackedAudio }[];
 }
 
 export async function listSongs(): Promise<Song[]> {

@@ -11,6 +11,7 @@ import { Studio } from './components/Studio';
 import { ControlTab } from './components/ControlTab';
 import { TabTab, type TabRequest } from './components/TabTab';
 import { SongsTab } from './components/SongsTab';
+import type { StudioImport } from './components/SeparationPanel';
 import { ACTIONS, type ActionId } from './control/actions';
 import { controlInputs, type ControlEvent } from './control/inputs';
 import { useAction, type ActionHandler, type Register } from './control/registry';
@@ -104,6 +105,7 @@ export default function App() {
   const [studioBusy, setStudioBusy] = useState(false);
   const [takesVersion, setTakesVersion] = useState(0);
   const [tabRequest, setTabRequest] = useState<TabRequest | null>(null);
+  const [studioImport, setStudioImport] = useState<StudioImport | null>(null);
 
   const sendToTab = (title: string, buffer: AudioBuffer, dry: boolean) => {
     const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
@@ -857,7 +859,16 @@ export default function App() {
       </div>
 
       <div className="layout" role="tabpanel" id="panel-songs" aria-labelledby="tab-songs" hidden={tab !== 'songs'}>
-        <SongsTab engine={engine} active={tab === 'songs'} register={register} theme={settings.theme} />
+        <SongsTab
+          engine={engine}
+          active={tab === 'songs'}
+          register={register}
+          theme={settings.theme}
+          onToStudio={(req) => {
+            setStudioImport((r) => ({ ...req, n: (r?.n ?? 0) + 1 }));
+            update({ tab: 'studio' });
+          }}
+        />
       </div>
 
       <div className="layout" role="tabpanel" id="panel-studio" aria-labelledby="tab-studio" hidden={tab !== 'studio'}>
@@ -875,6 +886,7 @@ export default function App() {
           theme={settings.theme}
           register={register}
           onTab={sendToTab}
+          importRequest={studioImport}
         />
       </div>
 

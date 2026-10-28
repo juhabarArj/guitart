@@ -15,6 +15,8 @@ export interface StudioTrack {
   /** Original sin efectos, si existe: permite hacer re-amp */
   dry: AudioBuffer | null;
   reamped: boolean;
+  /** Pista importada (instrumento separado): se guarda comprimida */
+  lossy?: boolean;
 }
 
 export const audible = (t: StudioTrack, all: StudioTrack[]) => !t.mute && (!all.some((x) => x.solo) || t.solo);
