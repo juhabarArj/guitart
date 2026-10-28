@@ -5,6 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 // La app se publica en https://juhabararj.github.io/guitart/
 export default defineConfig({
   base: '/guitart/',
+  worker: { format: 'es' },
   build: {
     chunkSizeWarningLimit: 2000,
     rollupOptions: {
@@ -36,11 +37,14 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         // El motor de IA (TensorFlow.js) es grande: se descarga y se guarda la primera vez que se usa
-        globIgnores: ['**/tfjs*.js', '**/index-*.js.map'],
+        globIgnores: ['**/tfjs*.js', '**/worker*.js', '**/index-*.js.map'],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         runtimeCaching: [
           {
-            urlPattern: ({ url }) => url.pathname.includes('/models/') || /\/assets\/tfjs.*\.js$/.test(url.pathname),
+            urlPattern: ({ url }) =>
+              url.pathname.includes('/models/') ||
+              url.pathname.includes('/ort/') ||
+              /\/assets\/(tfjs|worker).*\.js$/.test(url.pathname),
             handler: 'CacheFirst',
             options: { cacheName: 'guitart-ia', expiration: { maxEntries: 10 } }
           }

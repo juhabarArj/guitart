@@ -2208,3 +2208,87 @@ input[type='range'] {
   padding: 0.3rem 0.4rem;
   color: var(--silk);
 }
+
+/* Separación de instrumentos */
+.separation {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--edge);
+}
+
+.separation-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.4rem;
+}
+
+.separation-head h3 {
+  margin: 0;
+  font-family: var(--font-face);
+  font-weight: 600;
+  font-size: 1.2rem;
+}
+
+.badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--amber);
+  color: var(--amber);
+}
+
+.sep-checks {
+  margin: 0.5rem 0 0.75rem;
+  padding-left: 1.1rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+  display: grid;
+  gap: 0.2rem;
+}
+
+.sep-checks li.ok::marker {
+  color: var(--tuned);
+}
+
+.sep-checks li.warn {
+  color: var(--amber);
+}
+
+.sep-progress .bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--steel);
+  overflow: hidden;
+  margin: 0.5rem 0;
+}
+
+.sep-progress .bar div {
+  height: 100%;
+  width: 100%;
+  background: var(--amber);
+  transform-origin: left;
+  transition: transform 0.2s;
+}
+
+.stems {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.stem-row {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1fr) auto auto minmax(6rem, 2fr);
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  background: var(--plate-2);
+}
+
+.stem-name {
+  font-weight: 600;
+}

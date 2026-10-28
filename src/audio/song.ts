@@ -50,6 +50,27 @@ export class SongPlayer {
     }
   }
 
+  /** Cambia el audio (p. ej. una mezcla sin algún instrumento) manteniendo posición, bucle y reproducción. */
+  swap(blob: Blob) {
+    const el = this.el;
+    if (!el) return this.load(blob);
+    const at = el.currentTime;
+    const wasPlaying = !el.paused;
+    const old = this.url;
+    this.url = URL.createObjectURL(blob);
+    el.src = this.url;
+    el.playbackRate = this.rate;
+    el.addEventListener(
+      'loadedmetadata',
+      () => {
+        el.currentTime = at;
+        if (wasPlaying) el.play().catch(() => undefined);
+        if (old) URL.revokeObjectURL(old);
+      },
+      { once: true }
+    );
+  }
+
   unload() {
     this.pause();
     if (this.url) URL.revokeObjectURL(this.url);

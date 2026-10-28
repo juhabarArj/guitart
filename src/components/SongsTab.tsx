@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { AudioEngine } from '../audio/engine';
 import { useAction, type Register } from '../control/registry';
 import { deleteSong, listSongs, saveSong, type Song } from '../storage/songs';
+import { SeparationPanel } from './SeparationPanel';
 import { analyzeOnsets, estimateBpmFromTimes, onsetSeconds, toMono } from '../tab/transcribe';
 
 const MAX_MB = 60;
@@ -426,6 +427,7 @@ export function SongsTab({ engine, active, register, theme }: { engine: AudioEng
                 />
               </label>
             </div>
+            <SeparationPanel engine={engine} song={current} />
           </>
         )}
       </section>

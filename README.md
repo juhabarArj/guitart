@@ -4,7 +4,16 @@ Estudio de guitarra en el navegador: afinador, simulador de amplificador, pedale
 
 **Demo:** https://juhabararj.github.io/guitart/
 
-## Canciones, etapa 1 (esta versión, 1.3)
+## Canciones, etapa 2: prueba de separación (esta versión, 1.4)
+
+- En el reproductor, «Separar instrumentos»: batería, bajo, voz y resto, con el modelo Demucs dentro del navegador (la canción no sale del equipo)
+- Funciona en un hilo aparte (Web Worker) con aceleración gráfica WebGPU si está disponible y, si no, con el procesador
+- El modelo (172 MB) se descarga de Hugging Face la primera vez y queda guardado; también se puede elegir desde un archivo
+- Muestra el progreso, el tiempo estimado y, al terminar, cuánto ha tardado respecto a la duración de la canción
+- Mezclador con silencio, solo y volumen por instrumento; la mezcla sustituye a la canción en el reproductor sin perder posición, bucle ni velocidad
+- Prueba de concepto: las pistas separadas aún no se guardan
+
+## Canciones, etapa 1 (1.3)
 
 - Nueva pestaña «Canciones»: subir MP3, M4A, WAV, OGG o FLAC y tocar encima con tu sonido
 - Onda de la canción; clic para saltar, arrastrar para crear un bucle A-B (o marcar A y B mientras suena)
@@ -138,6 +147,7 @@ src/control/                           Acciones, asignaciones, teclado, MIDI y B
 src/tab/                               Transcripción, digitación, tablatura de texto y sonido de cuerda
 src/audio/song.ts                      Reproductor de canciones (velocidad y bucle A-B)
 src/storage/songs.ts                   Canciones guardadas en el navegador
+src/separate/                          Separación de instrumentos (hilo aparte con Demucs y ONNX Runtime)
 src/audio/engine.ts                    Grafo de audio (entrada, canal, ganancia, pedalera, monitor, captura)
 src/audio/effects.ts                   Definición y procesado de cada pedal
 src/audio/chain.ts                     Cadena de efectos y estado de la pedalera
@@ -158,10 +168,12 @@ src/components/                        Afinador, medidor y grabadora
 5. ~~Looper y estudio: looper, metrónomo, caja de ritmos, multipista y re-amp~~
 6. ~~Control: MIDI, pedal Bluetooth, atajos de teclado y copia de seguridad~~
 7. **Tablatura.** ~~Etapas 1, 2, 4, 5 y 6~~. Pendiente: etapa 3, exportar a MusicXML y guardar varias tablaturas
-8. **Canciones.** ~~Etapa 1: reproductor con bucle A-B, velocidad y tempo~~. Pendiente: 2 separar instrumentos en el navegador (Demucs); 3 pistas separadas en el Estudio con silenciar y solo; 4 tablatura desde una pista separada; 5 opcionales (servidor local, transportar el tono, tablatura de batería)
+8. **Canciones.** ~~Etapa 1: reproductor con bucle A-B, velocidad y tempo~~. ~~2 prueba de separación en el navegador~~. Pendiente: medir la velocidad en un equipo real; 3 pistas separadas en el Estudio con silenciar y solo; 4 tablatura desde una pista separada; 5 opcionales (servidor local, transportar el tono, tablatura de batería)
 9. **Futuro.** Presets por enlace, modelos de amplificador neuronales (NAM) en WASM y conservar el bucle del looper al reconstruir el motor
 
 ## Componentes de terceros
 
 - [Basic Pitch](https://github.com/spotify/basic-pitch-ts) (Spotify), licencia Apache 2.0. El modelo está en `public/models/basic-pitch/` junto a su licencia.
 - [TensorFlow.js](https://github.com/tensorflow/tfjs), licencia Apache 2.0.
+- [Demucs](https://github.com/facebookresearch/demucs) (Meta), licencia MIT, mediante [demucs-web](https://github.com/timcsy/demucs-web) (MIT). El modelo convertido a ONNX se descarga de Hugging Face (timcsy/demucs-web-onnx).
+- [ONNX Runtime Web](https://github.com/microsoft/onnxruntime), licencia MIT. Sus archivos WebAssembly están en `public/ort/`.
