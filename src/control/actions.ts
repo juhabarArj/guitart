@@ -12,6 +12,9 @@ export type ActionId =
   | 'preset.next'
   | 'preset.prev'
   | 'tuner.mute'
+  | 'song.play'
+  | 'song.toA'
+  | 'song.loop'
   | `pedal.${number}`;
 
 export interface ActionDef {
@@ -36,7 +39,10 @@ export const ACTIONS: ActionDef[] = [
     label: `Activar o apagar el pedal ${i + 1}`,
     group: 'Pedalera'
   })),
-  { id: 'tuner.mute', label: 'Silenciar al afinar', group: 'Afinador' }
+  { id: 'tuner.mute', label: 'Silenciar al afinar', group: 'Afinador' },
+  { id: 'song.play', label: 'Reproducir o pausar la canción', group: 'Canciones' },
+  { id: 'song.toA', label: 'Volver al inicio del bucle (o de la canción)', group: 'Canciones' },
+  { id: 'song.loop', label: 'Activar o quitar el bucle A-B', group: 'Canciones' }
 ];
 
 /** Asignaciones: "key:<código de tecla>" o "midi:cc:64", "midi:note:60", "midi:pc:3" */
@@ -51,6 +57,9 @@ export const DEFAULT_BINDINGS: Bindings = {
   'preset.next': ['key:ArrowRight', 'key:PageDown'],
   'preset.prev': ['key:ArrowLeft', 'key:PageUp'],
   'tuner.mute': ['key:KeyT'],
+  'song.play': ['key:KeyP'],
+  'song.toA': ['key:KeyB'],
+  'song.loop': ['key:KeyL'],
   ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`pedal.${i + 1}`, [`key:Digit${i + 1}`]]))
 };
 

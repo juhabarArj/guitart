@@ -112,6 +112,13 @@ export function LooperTab({ engine, active, latencyMs, register }: LooperTabProp
 
   useEffect(() => engine.looper.setLatency(latencyMs), [engine, latencyMs]);
 
+  // El reproductor de canciones puede fijar el tempo («Usar en el metrónomo»)
+  useEffect(() => {
+    const onBpm = (e: Event) => update({ bpm: Math.max(40, Math.min(240, (e as CustomEvent<number>).detail)) });
+    window.addEventListener('guitart:set-bpm', onBpm);
+    return () => window.removeEventListener('guitart:set-bpm', onBpm);
+  }, [update]);
+
   useEffect(
     () =>
       engine.looper.subscribe((s) => {

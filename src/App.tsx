@@ -10,6 +10,7 @@ import { Recorder } from './components/Recorder';
 import { Studio } from './components/Studio';
 import { ControlTab } from './components/ControlTab';
 import { TabTab, type TabRequest } from './components/TabTab';
+import { SongsTab } from './components/SongsTab';
 import { ACTIONS, type ActionId } from './control/actions';
 import { controlInputs, type ControlEvent } from './control/inputs';
 import { useAction, type ActionHandler, type Register } from './control/registry';
@@ -58,6 +59,7 @@ const TABS: { value: TabName; label: string }[] = [
   { value: 'audio', label: 'Afinador y audio' },
   { value: 'board', label: 'Pedalera y grabación' },
   { value: 'looper', label: 'Looper y ritmo' },
+  { value: 'songs', label: 'Canciones' },
   { value: 'studio', label: 'Estudio' },
   { value: 'tab', label: 'Tablatura' },
   { value: 'control', label: 'Ajustes' }
@@ -852,6 +854,10 @@ export default function App() {
 
       <div className="layout" role="tabpanel" id="panel-looper" aria-labelledby="tab-looper" hidden={tab !== 'looper'}>
         <LooperTab engine={engine} active={tab === 'looper'} latencyMs={measuredMs ?? totalLatency} register={register} />
+      </div>
+
+      <div className="layout" role="tabpanel" id="panel-songs" aria-labelledby="tab-songs" hidden={tab !== 'songs'}>
+        <SongsTab engine={engine} active={tab === 'songs'} register={register} theme={settings.theme} />
       </div>
 
       <div className="layout" role="tabpanel" id="panel-studio" aria-labelledby="tab-studio" hidden={tab !== 'studio'}>

@@ -3,7 +3,7 @@ import type { ChannelMode, RecordSource } from './audio/engine';
 import { DEFAULT_BINDINGS, type Bindings } from './control/actions';
 
 export type ThemeName = 'auto' | 'light' | 'dark' | 'ebook' | 'dire';
-export type TabName = 'audio' | 'board' | 'looper' | 'studio' | 'tab' | 'control';
+export type TabName = 'audio' | 'board' | 'looper' | 'songs' | 'studio' | 'tab' | 'control';
 
 export interface Settings {
   inputId: string;
@@ -47,7 +47,8 @@ const DEFAULTS: Settings = {
 export function useSettings() {
   const [settings, setSettings] = useState<Settings>(() => {
     try {
-      return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || '{}') };
+      const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
+      return { ...DEFAULTS, ...saved, bindings: { ...DEFAULT_BINDINGS, ...saved.bindings } };
     } catch {
       return DEFAULTS;
     }

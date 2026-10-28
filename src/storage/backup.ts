@@ -45,7 +45,7 @@ export async function exportBackup(includeAudio: boolean): Promise<Blob> {
     const k = localStorage.key(i)!;
     if (k.startsWith(LS_PREFIX)) settings[k] = localStorage.getItem(k)!;
   }
-  const names: StoreName[] = includeAudio ? ['presets', 'irs', 'recordings', 'studio'] : ['presets', 'irs'];
+  const names: StoreName[] = includeAudio ? ['presets', 'irs', 'recordings', 'studio', 'songs'] : ['presets', 'irs'];
   const stores: BackupFile['stores'] = {};
   for (const n of names) stores[n] = (await mapBlobs(await run<unknown[]>(n, 'readonly', (s) => s.getAll()), true)) as unknown[];
   const file: BackupFile = { app: 'guitart', kind: 'backup', version: 1, createdAt: Date.now(), settings, stores };

@@ -81,12 +81,21 @@ export function toMono(channels: Float32Array[]): Float32Array {
 
 const yieldToUi = () => new Promise((r) => setTimeout(r, 0));
 
-export async function transcribe(
+export interface OnsetAnalysis {
+  frames: number;
+  /** Tramas (de HOP muestras) donde empieza un sonido */
+  onsets: number[];
+  rms: Float32Array;
+  maxRms: number;
+}
+
+/** Ataques por flujo espectral con umbral adaptativo (sirve para notas y para el tempo de una canción). */
+export async function analyzeOnsets(
   x: Float32Array,
   sr: number,
-  opts: TranscribeOptions = DEFAULT_TRANSCRIBE,
+  sensitivity: number,
   onProgress?: (p: number) => void
-): Promise<RawNote[]> {
+): Promise<OnsetAnalysis> {
   const frames = Math.max(0, Math.floor((x.length - N) / HOP) + 1);
   const win = new Float32Array(N).map((_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N));
   const maxBin = Math.min(N / 2, Math.round((6000 / sr) * N));
@@ -131,7 +140,7 @@ export async function transcribe(
     maxRms = Math.max(maxRms, rms[f]);
   }
   const w = 12;
-  const delta = 0.2 - 0.17 * opts.sensitivity; // proporción del máximo
+  const delta = 0.2 - 0.17 * sensitivity; // proporción del máximo
   const minGap = Math.round((0.06 * sr) / HOP);
   const onsets: number[] = [];
   for (let f = 0; f < frames - 1; f++) {
@@ -146,6 +155,20 @@ export async function transcribe(
     const loud = rms[Math.min(frames - 1, f + 2)] > maxRms * 0.03;
     if (peak && loud && (!onsets.length || f - onsets[onsets.length - 1] >= minGap)) onsets.push(f);
   }
+
+  return { frames, onsets, rms, maxRms };
+}
+
+/** Instantes (s) de los ataques. */
+export const onsetSeconds = (a: OnsetAnalysis, sr: number) => a.onsets.map((f) => (f * HOP + HOP) / sr);
+
+export async function transcribe(
+  x: Float32Array,
+  sr: number,
+  opts: TranscribeOptions = DEFAULT_TRANSCRIBE,
+  onProgress?: (p: number) => void
+): Promise<RawNote[]> {
+  const { frames, onsets, rms, maxRms } = await analyzeOnsets(x, sr, opts.sensitivity, onProgress);
 
   // 3. Solo cuentan como púa los ataques en los que sube la energía (un hammer-on o un slide no la suben)
   const attacks: number[] = [];
@@ -300,9 +323,13 @@ export async function transcribe(
 
 /** Estima el tempo buscando la rejilla de corcheas que mejor encaja con los ataques. */
 export function estimateBpm(notes: RawNote[]): number {
+  return estimateBpmFromTimes(notes.map((n) => n.t));
+}
+
+export function estimateBpmFromTimes(input: number[]): number {
   // Las notas de un mismo rasgueo (separadas unos milisegundos) cuentan como un solo ataque
   const times: number[] = [];
-  for (const n of [...notes].sort((a, b) => a.t - b.t)) if (!times.length || n.t - times[times.length - 1] > 0.05) times.push(n.t);
+  for (const t of [...input].sort((a, b) => a - b)) if (!times.length || t - times[times.length - 1] > 0.05) times.push(t);
   if (times.length < 4) return 100;
   const t0 = times[0];
   let best = 100;
@@ -310,12 +337,13 @@ export function estimateBpm(notes: RawNote[]): number {
   for (let bpm = 60; bpm <= 180; bpm += 0.5) {
     const sd = 60 / bpm / 2;
     let err = 0;
+    // Error medido en segundos (no en fracción de rejilla), para no castigar los tempos rápidos
     for (const t of times) {
       const q = (t - t0) / sd;
-      err += Math.abs(q - Math.round(q));
+      err += Math.abs(q - Math.round(q)) * sd;
     }
     // Ligera preferencia por tempos medios para evitar el doble o la mitad
-    const score = err / times.length + Math.abs(bpm - 110) / 4000;
+    const score = err / times.length + Math.abs(bpm - 110) / 20000;
     if (score < bestScore) {
       bestScore = score;
       best = bpm;

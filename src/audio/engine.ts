@@ -1,4 +1,5 @@
 import { EffectChain, type BoardState } from './chain';
+import { SongPlayer } from './song';
 import { StudioPlayer } from './studio';
 import { PATTERNS } from './drums';
 import type { IrLoader } from './effects';
@@ -72,6 +73,7 @@ export class AudioEngine {
   private mixBus!: GainNode;
   readonly looper = new Looper();
   readonly studio = new StudioPlayer();
+  readonly song = new SongPlayer();
   readonly transport = new Transport({
     bpm: 100,
     beatsPerBar: 4,
@@ -150,6 +152,7 @@ export class AudioEngine {
     this.transport.attach(ctx, ctx.destination);
     this.transport.output!.connect(this.mixBus);
     this.studio.attach(ctx, ctx.destination, this.mixBus);
+    this.song.attach(ctx, ctx.destination, this.mixBus);
 
     this.capture.port.onmessage = (e: MessageEvent) => {
       if (e.data.type === 'chunk') this.chunks.push(e.data.channels);

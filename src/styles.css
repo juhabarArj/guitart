@@ -2083,3 +2083,128 @@ input[type='range'] {
   font-size: 9px;
   text-anchor: middle;
 }
+
+/* Canciones */
+.songs-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+@media (min-width: 900px) {
+  .songs-layout {
+    grid-template-columns: minmax(16rem, 0.7fr) minmax(0, 1.6fr);
+  }
+}
+
+.song-list {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.song-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  padding: 0.35rem 0.4rem 0.35rem 0.2rem;
+  background: var(--plate-2);
+}
+
+.song-list li.current {
+  border-color: var(--amber);
+}
+
+.song-pick {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+}
+
+.song-pick strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.song-pick span {
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.song-wave {
+  position: relative;
+  height: 7rem;
+  border-radius: 10px;
+  background: var(--steel);
+  overflow: hidden;
+  cursor: crosshair;
+  touch-action: none;
+  margin-bottom: 0.9rem;
+}
+
+.song-wave canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.song-wave .playhead {
+  background: var(--amber);
+}
+
+.player-transport {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.play-btn {
+  min-width: 7.5rem;
+  font-family: var(--font-face);
+  font-size: 1.15rem;
+}
+
+.loop-controls {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.player-settings {
+  display: grid;
+  gap: 0 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+}
+
+.rate-presets,
+.tempo-tools {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  justify-content: flex-start !important;
+}
+
+.tempo-tools input {
+  width: 5rem;
+  background: var(--plate-2);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-control);
+  padding: 0.3rem 0.4rem;
+  color: var(--silk);
+}

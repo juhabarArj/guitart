@@ -4,7 +4,16 @@ Estudio de guitarra en el navegador: afinador, simulador de amplificador, pedale
 
 **Demo:** https://juhabararj.github.io/guitart/
 
-## Tablatura, etapas 4, 5 y 6 (esta versión, 1.2)
+## Canciones, etapa 1 (esta versión, 1.3)
+
+- Nueva pestaña «Canciones»: subir MP3, M4A, WAV, OGG o FLAC y tocar encima con tu sonido
+- Onda de la canción; clic para saltar, arrastrar para crear un bucle A-B (o marcar A y B mientras suena)
+- Velocidad del 40 al 125 % sin cambiar el tono
+- Tempo estimado (corregible con ÷2 y ×2) y «Usar en el metrónomo», que pasa el tempo a la velocidad elegida al metrónomo, la batería y el looper
+- Bucle y velocidad recordados con cada canción; atajos P (reproducir), B (volver al inicio del bucle) y L (bucle)
+- La grabación en modo Mezcla incluye la canción
+
+## Tablatura, etapas 4, 5 y 6 (1.2)
 
 - Técnicas en la detección de notas sueltas, siguiendo la curva de tono: hammer-on (h), pull-off (p), slides (/ y \\), bends (7b9) y vibrato (~). Los ataques de púa se distinguen de los ligados por la subida de energía
 - Edición de técnicas en el editor y reproducción con ellas (bend, vibrato, slide)
@@ -127,6 +136,8 @@ src/storage/studio.ts                  Proyecto del multipista en IndexedDB
 src/storage/backup.ts                  Copia de seguridad completa
 src/control/                           Acciones, asignaciones, teclado, MIDI y Bluetooth
 src/tab/                               Transcripción, digitación, tablatura de texto y sonido de cuerda
+src/audio/song.ts                      Reproductor de canciones (velocidad y bucle A-B)
+src/storage/songs.ts                   Canciones guardadas en el navegador
 src/audio/engine.ts                    Grafo de audio (entrada, canal, ganancia, pedalera, monitor, captura)
 src/audio/effects.ts                   Definición y procesado de cada pedal
 src/audio/chain.ts                     Cadena de efectos y estado de la pedalera
@@ -147,7 +158,8 @@ src/components/                        Afinador, medidor y grabadora
 5. ~~Looper y estudio: looper, metrónomo, caja de ritmos, multipista y re-amp~~
 6. ~~Control: MIDI, pedal Bluetooth, atajos de teclado y copia de seguridad~~
 7. **Tablatura.** ~~Etapas 1, 2, 4, 5 y 6~~. Pendiente: etapa 3, exportar a MusicXML y guardar varias tablaturas
-8. **Futuro.** Reproductor de canciones para practicar, presets por enlace, modelos de amplificador neuronales (NAM) en WASM y conservar el bucle del looper al reconstruir el motor
+8. **Canciones.** ~~Etapa 1: reproductor con bucle A-B, velocidad y tempo~~. Pendiente: 2 separar instrumentos en el navegador (Demucs); 3 pistas separadas en el Estudio con silenciar y solo; 4 tablatura desde una pista separada; 5 opcionales (servidor local, transportar el tono, tablatura de batería)
+9. **Futuro.** Presets por enlace, modelos de amplificador neuronales (NAM) en WASM y conservar el bucle del looper al reconstruir el motor
 
 ## Componentes de terceros
 
